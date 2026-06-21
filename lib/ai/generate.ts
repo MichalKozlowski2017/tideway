@@ -13,7 +13,7 @@ import {
   buildSourceLabel,
   isArticleSourceType,
 } from "@/lib/sources/source-label";
-import type { Article, Locale, RawItem, Source } from "@/lib/types";
+import type { Article, Category, Locale, RawItem, Source } from "@/lib/types";
 import { GENERATION_CATEGORIES } from "@/lib/types";
 import { resolveArticleImageUrl } from "@/lib/articles/resolve-image";
 import { contentHash, slugify } from "@/lib/utils/hash";
@@ -222,7 +222,7 @@ export async function generatePendingArticles(): Promise<{
   let tokensUsed = 0;
 
   for (const [key, groupItems] of grouped) {
-    const [locale, category] = key.split(":") as [Locale, string];
+    const [locale, category] = key.split(":") as [Locale, Category];
 
     for (const rawItem of groupItems) {
       const articleFormat = formatForSourceType(
