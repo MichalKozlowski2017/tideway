@@ -10,5 +10,11 @@ export const SECONDARY_SITE_URL = "https://tideway.eu";
 export const DEFAULT_SITE_URL = PRIMARY_SITE_URL;
 
 export function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? DEFAULT_SITE_URL;
+  // Production builds must never emit localhost in sitemap, canonical, OG, etc.
+  if (process.env.VERCEL_ENV === "production") {
+    return PRIMARY_SITE_URL;
+  }
+
+  const env = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  return env ?? DEFAULT_SITE_URL;
 }
