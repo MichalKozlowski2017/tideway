@@ -1,10 +1,13 @@
 import { getSupabaseAdmin } from "@/lib/db/supabase";
 import { fetchGoogleTrendsItems } from "@/lib/sources/google-trends";
+import { fetchHackerNewsItems } from "@/lib/sources/hacker-news";
+import { fetchLobstersItems } from "@/lib/sources/lobsters";
 import { fetchRedditItems } from "@/lib/sources/reddit";
 import { fetchRssItems } from "@/lib/sources/rss";
 import { fetchYouTubeItems } from "@/lib/sources/youtube";
 import type { NormalizedItem, Source } from "@/lib/types";
 import { contentHash } from "@/lib/utils/hash";
+import { buildSourceLabel } from "@/lib/sources/source-label";
 
 async function fetchFromSource(source: Source): Promise<NormalizedItem[]> {
   switch (source.type) {
@@ -14,6 +17,10 @@ async function fetchFromSource(source: Source): Promise<NormalizedItem[]> {
       return fetchRssItems(source);
     case "google_trends":
       return fetchGoogleTrendsItems(source);
+    case "hacker_news":
+      return fetchHackerNewsItems(source);
+    case "lobsters":
+      return fetchLobstersItems(source);
     case "youtube":
       return fetchYouTubeItems(source);
     default:
@@ -68,6 +75,7 @@ export async function ingestAllSources(): Promise<{
         title: item.title,
         description: item.description,
         url: item.url,
+        image_url: item.imageUrl ?? null,
         engagement_score: item.engagementScore,
         published_at: item.publishedAt?.toISOString() ?? null,
         content_hash: hash,
@@ -98,8 +106,15 @@ export async function getSourceItemsForArticle(
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
     .from("raw_items")
-    .select("title, url")
+    .select("title, url, sources(type, config)")
     .in("id", sourceItemIds);
 
-  return data ?? [];
+  return (data ?? []).map((row) => {
+    const source = row.sources as unknown as Pick<Source, "type" | "config"> | null;
+    const label = source ? buildSourceLabel(source) : "Source";
+    return {
+      title: `${row.title} (${label})`,
+      url: row.url,
+    };
+  });
 }

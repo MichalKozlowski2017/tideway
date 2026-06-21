@@ -7,7 +7,7 @@ import { ui } from "@/lib/i18n/config";
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: "Weekly digest | TrendPulse",
+  title: "Weekly digest | Tideway",
   description: "Top trends of the week — what rose and what fell.",
 };
 

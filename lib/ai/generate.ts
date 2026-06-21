@@ -1,17 +1,31 @@
 import OpenAI from "openai";
-import { buildBatchPrompt, buildDigestPrompt } from "@/lib/ai/prompts";
+import { formatForSourceType } from "@/lib/ai/article-body";
+import type { ArticleFormat } from "@/lib/ai/article-body";
+import { buildDigestPrompt, buildSingleArticlePrompt } from "@/lib/ai/prompts";
 import {
-  batchResponseSchema,
   digestResponseSchema,
+  normalizeGeneratedArticle,
   type DigestArticle,
   type GeneratedArticle,
 } from "@/lib/ai/schemas";
 import { getSupabaseAdmin } from "@/lib/db/supabase";
-import type { Article, Locale, RawItem } from "@/lib/types";
+import {
+  buildSourceLabel,
+  isArticleSourceType,
+} from "@/lib/sources/source-label";
+import type { Article, Locale, RawItem, Source } from "@/lib/types";
+import { GENERATION_CATEGORIES } from "@/lib/types";
+import { resolveArticleImageUrl } from "@/lib/articles/resolve-image";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 5;
+const PENDING_POOL_SIZE = 150;
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+const MAX_GENERATION_ATTEMPTS = 2;
+
+type PendingItem = RawItem & {
+  sources: Pick<Source, "category" | "locale" | "type" | "config">;
+};
 
 function getOpenAI(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -27,7 +41,7 @@ async function callOpenAI(
     model: MODEL,
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
-    temperature: 0.4,
+    temperature: 0.75,
   });
 
   const content = response.choices[0]?.message?.content;
@@ -61,9 +75,84 @@ async function ensureUniqueSlug(
   }
 }
 
+async function hasExistingArticle(
+  item: PendingItem,
+): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: byHash } = await supabase
+    .from("raw_items")
+    .select("id")
+    .eq("content_hash", item.content_hash)
+    .eq("status", "processed")
+    .neq("id", item.id)
+    .limit(1);
+
+  if (byHash?.length) return true;
+
+  const { data: byUrl } = await supabase
+    .from("raw_items")
+    .select("id")
+    .eq("url", item.url)
+    .eq("status", "processed")
+    .neq("id", item.id)
+    .limit(1);
+
+  return (byUrl?.length ?? 0) > 0;
+}
+
+function selectBatch(items: PendingItem[]): PendingItem[] {
+  const rss = items
+    .filter((i) => i.sources.type === "rss")
+    .sort(
+      (a, b) =>
+        new Date(b.published_at ?? b.fetched_at).getTime() -
+        new Date(a.published_at ?? a.fetched_at).getTime(),
+    );
+
+  const byCategory = new Map<string, PendingItem[]>();
+  for (const item of rss) {
+    const cat = item.sources.category;
+    const list = byCategory.get(cat) ?? [];
+    list.push(item);
+    byCategory.set(cat, list);
+  }
+
+  const batch: PendingItem[] = [];
+
+  const takeFrom = (category: string): boolean => {
+    const list = byCategory.get(category);
+    if (!list?.length) return false;
+    const item = list.shift()!;
+    byCategory.set(category, list);
+    batch.push(item);
+    return true;
+  };
+
+  // One slot per category (AI, sport, finance first)
+  for (const cat of GENERATION_CATEGORIES) {
+    if (batch.length >= BATCH_SIZE) break;
+    takeFrom(cat);
+  }
+
+  // Fill remaining slots — prefer categories with backlog
+  while (batch.length < BATCH_SIZE) {
+    let added = false;
+    for (const cat of [...GENERATION_CATEGORIES].reverse()) {
+      if (batch.length >= BATCH_SIZE) break;
+      if (takeFrom(cat)) added = true;
+    }
+    if (!added) break;
+  }
+
+  return batch;
+}
+
 export async function generatePendingArticles(): Promise<{
   generated: number;
   tokensUsed: number;
+  skippedTrends: number;
+  skippedDuplicates: number;
 }> {
   const supabase = getSupabaseAdmin();
 
@@ -71,20 +160,58 @@ export async function generatePendingArticles(): Promise<{
     .from("raw_items")
     .select("*, sources(category, locale, type, config)")
     .eq("status", "pending")
-    .order("engagement_score", { ascending: false })
-    .limit(BATCH_SIZE);
+    .order("fetched_at", { ascending: false })
+    .limit(PENDING_POOL_SIZE);
 
   if (error) throw error;
-  if (!pending?.length) return { generated: 0, tokensUsed: 0 };
+  if (!pending?.length) {
+    console.log("Brak pending items — nic do wygenerowania.");
+    return { generated: 0, tokensUsed: 0, skippedTrends: 0, skippedDuplicates: 0 };
+  }
 
-  const grouped = new Map<
-    string,
-    Array<RawItem & { sources: { category: string; locale: string } }>
-  >();
+  const items = (pending as PendingItem[]).filter((item) =>
+    isArticleSourceType(item.sources.type),
+  );
 
-  for (const item of pending as Array<
-    RawItem & { sources: { category: string; locale: string } }
-  >) {
+  let skippedTrends = 0;
+  let skippedDuplicates = 0;
+
+  for (const item of pending as PendingItem[]) {
+    if (!isArticleSourceType(item.sources.type)) {
+      await supabase
+        .from("raw_items")
+        .update({ status: "skipped" })
+        .eq("id", item.id);
+      skippedTrends += 1;
+    }
+  }
+
+  const eligible: PendingItem[] = [];
+  for (const item of items) {
+    if (await hasExistingArticle(item)) {
+      await supabase
+        .from("raw_items")
+        .update({ status: "skipped" })
+        .eq("id", item.id);
+      skippedDuplicates += 1;
+      continue;
+    }
+    eligible.push(item);
+  }
+
+  const batch = selectBatch(eligible);
+
+  if (!batch.length) {
+    return { generated: 0, tokensUsed: 0, skippedTrends, skippedDuplicates };
+  }
+
+  console.log(
+    `Batch: ${batch.length} artykułów (z ${eligible.length} pending, ${skippedDuplicates} duplikatów pominiętych)…`,
+  );
+
+  const grouped = new Map<string, PendingItem[]>();
+
+  for (const item of batch) {
     const key = `${item.sources.locale}:${item.sources.category}`;
     const list = grouped.get(key) ?? [];
     list.push(item);
@@ -94,30 +221,75 @@ export async function generatePendingArticles(): Promise<{
   let generated = 0;
   let tokensUsed = 0;
 
-  for (const [key, items] of grouped) {
+  for (const [key, groupItems] of grouped) {
     const [locale, category] = key.split(":") as [Locale, string];
 
-    const promptItems = items.map((item) => ({
-      title: item.title,
-      description: item.description ?? "",
-      url: item.url,
-      sourceLabel: item.url,
-      engagementScore: Number(item.engagement_score),
-    }));
+    for (const rawItem of groupItems) {
+      const articleFormat = formatForSourceType(
+        rawItem.sources.type,
+        rawItem.sources.category,
+      );
+      let generatedItem: GeneratedArticle | null = null;
+      let attemptTokens = 0;
 
-    const prompt = buildBatchPrompt(locale, category, promptItems);
-    const { content, tokensUsed: used } = await callOpenAI(prompt);
-    tokensUsed += used;
+      console.log(
+        `→ ${rawItem.title.slice(0, 70)}… [${articleFormat}, ${rawItem.sources.type}]`,
+      );
 
-    const parsed = batchResponseSchema.parse(JSON.parse(content));
+      for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
+        if (attempt > 0) {
+          console.log(`  retry ${attempt + 1}/${MAX_GENERATION_ATTEMPTS}…`);
+        }
+        const prompt = buildSingleArticlePrompt(
+          locale,
+          category,
+          {
+            title: rawItem.title,
+            description: rawItem.description ?? "",
+            url: rawItem.url,
+            sourceLabel: buildSourceLabel(rawItem.sources),
+            sourceType: rawItem.sources.type,
+            engagementScore: Number(rawItem.engagement_score),
+          },
+          articleFormat,
+          { strictLocale: attempt > 0 },
+        );
 
-    for (let i = 0; i < items.length; i += 1) {
-      const rawItem = items[i];
-      const generatedItem: GeneratedArticle =
-        parsed.items[i] ?? parsed.items[parsed.items.length - 1];
+        const { content, tokensUsed: used } = await callOpenAI(prompt);
+        attemptTokens += used;
+
+        const normalized = normalizeGeneratedArticle(
+          JSON.parse(content),
+          rawItem.title,
+          locale,
+          articleFormat,
+        );
+
+        if (normalized) {
+          generatedItem = normalized;
+          break;
+        }
+      }
+
+      tokensUsed += attemptTokens;
+
+      if (!generatedItem) {
+        console.log("  ✗ odrzucono (walidacja lub API)");
+        await supabase
+          .from("raw_items")
+          .update({ status: "failed" })
+          .eq("id", rawItem.id);
+        continue;
+      }
 
       const baseSlug = slugify(generatedItem.slug_hint || rawItem.title);
       const slug = await ensureUniqueSlug(locale, baseSlug);
+
+      const imageUrl = await resolveArticleImageUrl({
+        sourceImageUrl: rawItem.image_url,
+        pageUrl: rawItem.url,
+        category,
+      });
 
       const { error: articleError } = await supabase.from("articles").insert({
         slug,
@@ -128,7 +300,14 @@ export async function generatePendingArticles(): Promise<{
         seo_description: generatedItem.seo_description,
         headline: generatedItem.headline,
         lead: generatedItem.lead,
-        summary: generatedItem.bullet_points,
+        image_url: imageUrl,
+        summary: {
+          format: generatedItem.format,
+          body: generatedItem.body,
+          highlights: generatedItem.highlights,
+          contextNote: generatedItem.context_note,
+          sectionTitles: generatedItem.section_titles,
+        },
         why_it_matters: generatedItem.why_it_matters,
         tags: generatedItem.tags,
         source_item_ids: [rawItem.id],
@@ -149,10 +328,11 @@ export async function generatePendingArticles(): Promise<{
         .eq("id", rawItem.id);
 
       generated += 1;
+      console.log(`  ✓ ${slug}`);
     }
   }
 
-  return { generated, tokensUsed };
+  return { generated, tokensUsed, skippedTrends, skippedDuplicates };
 }
 
 export async function generateDigest(

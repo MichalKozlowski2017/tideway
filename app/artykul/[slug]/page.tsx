@@ -6,6 +6,7 @@ import { articleJsonLd } from "@/lib/seo/json-ld";
 import { getArticleBySlug, getRelatedArticles } from "@/lib/db/queries";
 import { getSourceItemsForArticle } from "@/lib/sources/ingest";
 import { articlePath } from "@/lib/i18n/config";
+import { siteUrl } from "@/lib/site";
 
 export const revalidate = 3600;
 
@@ -19,6 +20,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: article.seo_title,
     description: article.seo_description,
     keywords: article.tags,
+    openGraph: article.image_url
+      ? {
+          images: [{ url: article.image_url, alt: article.headline }],
+        }
+      : undefined,
   };
 }
 
@@ -32,7 +38,7 @@ export default async function ArticlePage({ params }: Props) {
     getRelatedArticles(article),
   ]);
 
-  const url = `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://trendpulse.app"}${articlePath("pl", slug)}`;
+  const url = `${siteUrl()}${articlePath("pl", slug)}`;
 
   return (
     <>

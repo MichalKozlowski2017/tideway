@@ -3,6 +3,8 @@ import { ingestAllSources } from "@/lib/sources/ingest";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
 import { finishJob, startJob } from "@/lib/ai/generate";
 
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

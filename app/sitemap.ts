@@ -1,21 +1,19 @@
 import type { MetadataRoute } from "next";
-import { getAllArticleSlugs } from "@/lib/db/queries";
-import { articlePath, categoryPath, dailyDigestPath, weeklyDigestPath } from "@/lib/i18n/config";
-import { categorySlug, type Category, type Locale } from "@/lib/types";
+import { getAllArticleSlugs, getDistinctTags } from "@/lib/db/queries";
+import { articlePath, categoryPath, dailyDigestPath, weeklyDigestPath, tagPath, activeLocales } from "@/lib/i18n/config";
+import { categorySlug, MAIN_CATEGORIES, type Locale } from "@/lib/types";
 import { hasSupabaseConfig } from "@/lib/db/supabase";
+import { siteUrl } from "@/lib/site";
 
-const CATEGORIES: Category[] = ["technology", "gaming", "ai"];
-const LOCALES: Locale[] = ["pl", "en"];
+const CATEGORIES = MAIN_CATEGORIES;
+const LOCALES = activeLocales;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "https://trendpulse.app";
+  const base = siteUrl();
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: base, changeFrequency: "hourly", priority: 1 },
-    { url: `${base}/en`, changeFrequency: "hourly", priority: 1 },
     { url: `${base}${dailyDigestPath("pl")}`, changeFrequency: "daily", priority: 0.8 },
     { url: `${base}${weeklyDigestPath("pl")}`, changeFrequency: "weekly", priority: 0.8 },
-    { url: `${base}${dailyDigestPath("en")}`, changeFrequency: "daily", priority: 0.8 },
-    { url: `${base}${weeklyDigestPath("en")}`, changeFrequency: "weekly", priority: 0.8 },
   ];
 
   for (const locale of LOCALES) {
@@ -38,7 +36,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.7,
     }));
-    return [...staticRoutes, ...articleRoutes];
+
+    const tagRoutes: MetadataRoute.Sitemap = [];
+    for (const locale of LOCALES) {
+      const tags = await getDistinctTags(locale);
+      for (const tag of tags) {
+        tagRoutes.push({
+          url: `${base}${tagPath(locale as Locale, tag.slug)}`,
+          changeFrequency: "daily",
+          priority: 0.6,
+        });
+      }
+    }
+
+    return [...staticRoutes, ...articleRoutes, ...tagRoutes];
   } catch {
     return staticRoutes;
   }

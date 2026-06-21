@@ -1,4 +1,5 @@
 import type { Article } from "@/lib/types";
+import { SITE_NAME } from "@/lib/site";
 
 export function articleJsonLd(article: Article, url: string) {
   return {
@@ -12,11 +13,11 @@ export function articleJsonLd(article: Article, url: string) {
     url,
     author: {
       "@type": "Organization",
-      name: "TrendPulse",
+      name: SITE_NAME,
     },
     publisher: {
       "@type": "Organization",
-      name: "TrendPulse",
+      name: SITE_NAME,
     },
   };
 }

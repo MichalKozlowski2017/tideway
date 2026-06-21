@@ -1,6 +1,8 @@
-import type { Locale } from "@/lib/types";
+import type { Locale, Category } from "@/lib/types";
 
 export const locales: Locale[] = ["pl", "en"];
+/** Locales with live content and UI — EN paused until we generate EN articles */
+export const activeLocales: Locale[] = ["pl"];
 export const defaultLocale: Locale = "pl";
 
 export function isLocale(value: string): value is Locale {
@@ -57,6 +59,27 @@ export const categoryLabels: Record<
   },
 };
 
+export const categoryNavLabels: Record<Locale, Record<Category, string>> = {
+  pl: {
+    technology: "Technologia",
+    gaming: "Gry",
+    ai: "AI",
+    sport: "Sport",
+    finance: "Finanse",
+  },
+  en: {
+    technology: "Technology",
+    gaming: "Gaming",
+    ai: "AI",
+    sport: "Sport",
+    finance: "Finance",
+  },
+};
+
+export function categoryNavLabel(locale: Locale, category: Category): string {
+  return categoryNavLabels[locale][category];
+}
+
 export const ui: Record<
   Locale,
   {
@@ -72,15 +95,22 @@ export const ui: Record<
     latest: string;
     tags: string;
     related: string;
+    tagPageTitle: string;
+    tagPageDescription: string;
+    openMenu: string;
+    closeMenu: string;
+    menu: string;
+    categories: string;
+    digests: string;
     siteName: string;
     rising: string;
     falling: string;
   }
 > = {
   pl: {
-    homeTitle: "TrendPulse — co dziś w trendach",
+    homeTitle: "Tideway — co dziś w trendach",
     homeDescription:
-      "Automatyczne podsumowania trendów: technologia, gry, AI i więcej.",
+      "Automatyczne podsumowania trendów: technologia, gry, AI, sport i finanse.",
     dailyDigest: "Dzienny przegląd",
     weeklyDigest: "Tygodniowy przegląd",
     keyPoints: "Najważniejsze punkty",
@@ -91,14 +121,22 @@ export const ui: Record<
     latest: "Najnowsze",
     tags: "Tagi",
     related: "Powiązane",
-    siteName: "TrendPulse",
+    tagPageTitle: "Trendy: {tag}",
+    tagPageDescription:
+      "Najnowsze artykuły i podsumowania powiązane z tematem „{tag}”.",
+    openMenu: "Otwórz menu",
+    closeMenu: "Zamknij menu",
+    menu: "Menu",
+    categories: "Kategorie",
+    digests: "Przeglądy",
+    siteName: "Tideway",
     rising: "Co rośnie",
     falling: "Co spada",
   },
   en: {
-    homeTitle: "TrendPulse — today's trends",
+    homeTitle: "Tideway — today's trends",
     homeDescription:
-      "Automated trend summaries: technology, gaming, AI, and more.",
+      "Automated trend summaries: technology, gaming, AI, sports, and finance.",
     dailyDigest: "Daily digest",
     weeklyDigest: "Weekly digest",
     keyPoints: "Key points",
@@ -109,7 +147,15 @@ export const ui: Record<
     latest: "Latest",
     tags: "Tags",
     related: "Related",
-    siteName: "TrendPulse",
+    tagPageTitle: "Trends: {tag}",
+    tagPageDescription:
+      "Latest articles and summaries related to “{tag}”.",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
+    menu: "Menu",
+    categories: "Categories",
+    digests: "Digests",
+    siteName: "Tideway",
     rising: "Rising",
     falling: "Falling",
   },
@@ -133,6 +179,11 @@ export function dailyDigestPath(locale: Locale): string {
 export function weeklyDigestPath(locale: Locale): string {
   if (locale === "pl") return "/tygodniowy-przeglad";
   return "/en/weekly-digest";
+}
+
+export function tagPath(locale: Locale, slug: string): string {
+  if (locale === "pl") return `/tagi/${slug}`;
+  return `/en/tag/${slug}`;
 }
 
 export function homePath(locale: Locale): string {

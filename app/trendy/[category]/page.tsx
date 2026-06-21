@@ -4,6 +4,7 @@ import { CategoryPage } from "@/components/category-page";
 import { SiteHeader } from "@/components/site-header";
 import { getArticles } from "@/lib/db/queries";
 import { categoryLabels } from "@/lib/i18n/config";
+import { SITE_NAME } from "@/lib/site";
 import { categoryFromSlug } from "@/lib/types";
 
 export const revalidate = 300;
@@ -16,7 +17,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!category) return {};
   const labels = categoryLabels.pl[category];
   return {
-    title: `${labels.title} | TrendPulse`,
+    title: `${labels.title} | ${SITE_NAME}`,
     description: labels.description,
   };
 }

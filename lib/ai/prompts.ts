@@ -1,43 +1,89 @@
+import type { ArticleFormat } from "@/lib/ai/article-body";
 import type { Locale } from "@/lib/types";
 
-export function buildBatchPrompt(
+export type PromptItem = {
+  title: string;
+  description: string;
+  url: string;
+  sourceLabel: string;
+  sourceType: string;
+  engagementScore: number;
+};
+
+export type PromptOptions = {
+  strictLocale?: boolean;
+};
+
+const FORMAT_GUIDE: Record<ArticleFormat, string> = {
+  story: `Format "story":
+- lead: vivid opening with the main fact in first sentence (min 80 chars)
+- body: 3 paragraphs (separated by blank lines), journalistic prose — min 500 chars total, NO bullet list in body
+- highlights: omit or max 2 short lines
+- section_titles.impact: creative heading (NOT "Dlaczego to ważne?" / "Potencjalne konsekwencje") e.g. "Co to zmienia na rynku"`,
+  brief: `Format "brief":
+- lead: one punchy sentence with the key fact — company, number, date (min 60 chars)
+- highlights: 4 crisp facts as list items (numbers, names, dates) — each min 25 chars
+- body: omit
+- section_titles.highlights: creative heading (NOT "Najważniejsze punkty") e.g. "W skrócie"`,
+  community: `Format "community":
+- lead: start with the TOPIC or linked story — NOT "Społeczność dyskutuje" / "Artykuł omawia" / "The community is discussing"
+- context_note: why this link is trending (score, comment count) — use ONLY facts from Input
+- body: 2 paragraphs explaining the linked story — min 350 chars total
+- highlights: 3 concrete takeaways from the source material
+- section_titles.highlights: e.g. "Dlaczego to trafia na listę"`,
+  analysis: `Format "analysis":
+- lead: specific thesis with names and facts — NOT "The real story behind..." (min 60 chars)
+- body: 3 paragraphs of context and implications — min 500 chars total, grounded in Input details
+- highlights: 3 analytical points (cause, effect, who wins/loses) with specifics
+- section_titles.impact: e.g. "Efekt domina" — NOT "Kluczowe punkty analizy"`,
+};
+
+export function buildSingleArticlePrompt(
   locale: Locale,
   category: string,
-  items: Array<{
-    title: string;
-    description: string;
-    url: string;
-    sourceLabel: string;
-    engagementScore: number;
-  }>,
+  item: PromptItem,
+  format: ArticleFormat,
+  options: PromptOptions = {},
 ): string {
   const lang = locale === "pl" ? "Polish" : "English";
+  const langRule = options.strictLocale
+    ? `CRITICAL: Every field (headline, lead, body, highlights, why_it_matters, tags) MUST be written entirely in ${lang}. Mixed language = invalid.`
+    : `Write the entire article in ${lang} only — headline, lead, body, highlights, why_it_matters, and tags. Never mix languages.`;
 
-  return `You are a news editor for TrendPulse. Write concise trend summaries in ${lang}.
+  return `You are a ${lang} editor at a tech publication. Write ONE unique article — NOT a template.
+
+${langRule}
 
 Category: ${category}
-Return ONLY valid JSON matching this schema:
+Source: ${item.sourceLabel} (${item.sourceType})
+Engagement: ${item.engagementScore}
+Required format: "${format}"
+
+${FORMAT_GUIDE[format]}
+
+Return ONLY valid JSON:
 {
-  "items": [{
-    "headline": "string",
-    "seo_title": "string (max 70 chars)",
-    "seo_description": "string (max 160 chars)",
-    "lead": "string (1-2 sentences)",
-    "bullet_points": ["3-5 key points"],
-    "why_it_matters": "string (1-2 sentences)",
-    "tags": ["5 tags"],
-    "slug_hint": "url-friendly-slug"
-  }]
+  "format": "${format}",
+  "headline": "unique headline — avoid clichés like 'Nowa era' or 'zyskuje na popularności'",
+  "seo_title": "max 70 chars",
+  "seo_description": "max 160 chars",
+  "lead": "see format rules above",
+  "body": "optional paragraphs for story/community/analysis",
+  "highlights": ["optional bullet items for brief/analysis/community"],
+  "context_note": "required for community format",
+  "section_titles": { "highlights": "custom section heading", "impact": "custom impact heading" },
+  "why_it_matters": "2 specific sentences — WHO is affected, WHAT changes — name companies, products, or user groups",
+  "tags": ["5 tags"],
+  "slug_hint": "url-slug"
 }
 
-Rules:
-- Synthesize, do not copy verbatim
-- Be factual and neutral
-- One output item per input item, same order
-- slug_hint in lowercase ASCII with hyphens
+Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje"
 
-Input items:
-${JSON.stringify(items, null, 2)}`;
+Input:
+Title: ${item.title}
+URL: ${item.url}
+Details:
+${item.description}`;
 }
 
 export function buildDigestPrompt(
@@ -49,7 +95,7 @@ export function buildDigestPrompt(
   const lang = locale === "pl" ? "Polish" : "English";
   const period = digestType === "daily" ? "today" : "this week";
 
-  return `You are a news editor for TrendPulse. Create a ${digestType} digest in ${lang} for category ${category} covering ${period}.
+  return `You are a news editor for Tideway. Create a ${digestType} digest in ${lang} for category ${category} covering ${period}.
 
 Return ONLY valid JSON:
 {

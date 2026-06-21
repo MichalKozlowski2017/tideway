@@ -3,6 +3,7 @@ import {
   getSupabasePublic,
   hasSupabaseConfig,
 } from "@/lib/db/supabase";
+import { tagSlug } from "@/lib/tags";
 import type { Article } from "@/lib/types";
 
 function mapArticle(row: Record<string, unknown>): Article {
@@ -16,13 +17,14 @@ function mapArticle(row: Record<string, unknown>): Article {
     seo_description: row.seo_description as string,
     headline: row.headline as string,
     lead: row.lead as string,
-    summary: (row.summary as string[]) ?? [],
+    summary: row.summary,
     why_it_matters: row.why_it_matters as string,
     tags: (row.tags as string[]) ?? [],
     source_item_ids: (row.source_item_ids as string[]) ?? [],
     published_at: row.published_at as string,
     updated_at: row.updated_at as string,
     is_published: row.is_published as boolean,
+    image_url: (row.image_url as string | null) ?? null,
   };
 }
 
@@ -86,6 +88,60 @@ export async function getRelatedArticles(
 
   if (error) throw error;
   return (data ?? []).map(mapArticle);
+}
+
+export async function getArticlesByTag(params: {
+  locale: string;
+  tag: string;
+  limit?: number;
+}): Promise<Article[]> {
+  if (!hasSupabaseConfig()) return [];
+  const client = getSupabasePublic();
+  const { data, error } = await client
+    .from("articles")
+    .select("*")
+    .eq("locale", params.locale)
+    .eq("is_published", true)
+    .contains("tags", [params.tag])
+    .order("published_at", { ascending: false })
+    .limit(params.limit ?? 24);
+
+  if (error) throw error;
+  return (data ?? []).map(mapArticle);
+}
+
+export async function getDistinctTags(
+  locale: string,
+): Promise<Array<{ name: string; slug: string; count: number }>> {
+  if (!hasSupabaseConfig()) return [];
+  const client = getSupabaseAdmin();
+  const { data, error } = await client
+    .from("articles")
+    .select("tags")
+    .eq("locale", locale)
+    .eq("is_published", true);
+
+  if (error) throw error;
+
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    for (const tag of (row.tags as string[]) ?? []) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, slug: tagSlug(name), count }))
+    .filter((item) => item.slug.length > 0)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, locale));
+}
+
+export async function resolveTagName(
+  locale: string,
+  slug: string,
+): Promise<string | null> {
+  const tags = await getDistinctTags(locale);
+  return tags.find((item) => item.slug === slug)?.name ?? null;
 }
 
 export async function getAllArticleSlugs(): Promise<

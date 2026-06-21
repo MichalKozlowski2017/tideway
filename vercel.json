@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/generate",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/cron/daily-rollup",
@@ -15,6 +15,26 @@
     {
       "path": "/api/cron/weekly-rollup",
       "schedule": "0 7 * * 1"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "tideway.eu" }],
+      "destination": "https://tideway.pl/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.tideway.eu" }],
+      "destination": "https://tideway.pl/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.tideway.pl" }],
+      "destination": "https://tideway.pl/:path*",
+      "permanent": true
     }
   ]
 }

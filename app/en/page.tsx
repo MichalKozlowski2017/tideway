@@ -2,18 +2,16 @@ import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
 import { ArticleCard } from "@/components/article-card";
 import { getArticles } from "@/lib/db/queries";
-import { ui } from "@/lib/i18n/config";
-import { categorySlug, type Category } from "@/lib/types";
+import { ui, categoryLabels } from "@/lib/i18n/config";
+import { categorySlug, MAIN_CATEGORIES } from "@/lib/types";
 
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: "TrendPulse — today's trends",
+  title: "Tideway — today's trends",
   description:
-    "Automated trend summaries: technology, gaming, AI, and more.",
+    "Automated trend summaries: technology, gaming, AI, sports, and finance.",
 };
-
-const FEATURED: Category[] = ["technology", "gaming", "ai"];
 
 export default async function EnHomePage() {
   const locale = "en" as const;
@@ -28,13 +26,13 @@ export default async function EnHomePage() {
         <p className="mt-2 max-w-2xl text-zinc-600">{t.homeDescription}</p>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          {FEATURED.map((cat) => (
+          {MAIN_CATEGORIES.map((cat) => (
             <a
               key={cat}
               href={`/en/trends/${categorySlug(locale, cat)}`}
               className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-700"
             >
-              {cat === "technology" ? "Technology" : cat === "gaming" ? "Gaming" : "AI"}
+              {categoryLabels[locale][cat].title}
             </a>
           ))}
         </div>

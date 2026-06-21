@@ -2,7 +2,31 @@ export type Locale = "pl" | "en";
 
 export type Category = "technology" | "gaming" | "ai" | "sport" | "finance";
 
-export type SourceType = "reddit" | "rss" | "youtube" | "google_trends";
+/** Categories shown in nav and on the home page */
+export const MAIN_CATEGORIES: Category[] = [
+  "technology",
+  "gaming",
+  "ai",
+  "sport",
+  "finance",
+];
+
+/** Round-robin order for generation — understaffed categories first */
+export const GENERATION_CATEGORIES: Category[] = [
+  "ai",
+  "sport",
+  "finance",
+  "gaming",
+  "technology",
+];
+
+export type SourceType =
+  | "reddit"
+  | "rss"
+  | "youtube"
+  | "google_trends"
+  | "hacker_news"
+  | "lobsters";
 
 export type RawItemStatus = "pending" | "processed" | "skipped" | "failed";
 
@@ -34,6 +58,7 @@ export interface RawItem {
   fetched_at: string;
   content_hash: string;
   status: RawItemStatus;
+  image_url: string | null;
 }
 
 export interface Article {
@@ -46,13 +71,14 @@ export interface Article {
   seo_description: string;
   headline: string;
   lead: string;
-  summary: string[];
+  summary: unknown;
   why_it_matters: string;
   tags: string[];
   source_item_ids: string[];
   published_at: string;
   updated_at: string;
   is_published: boolean;
+  image_url: string | null;
 }
 
 export interface NormalizedItem {
@@ -60,6 +86,7 @@ export interface NormalizedItem {
   title: string;
   description: string;
   url: string;
+  imageUrl?: string | null;
   engagementScore: number;
   publishedAt: Date | null;
   sourceLabel: string;

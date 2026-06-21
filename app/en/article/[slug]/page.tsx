@@ -6,6 +6,7 @@ import { articleJsonLd } from "@/lib/seo/json-ld";
 import { getArticleBySlug, getRelatedArticles } from "@/lib/db/queries";
 import { getSourceItemsForArticle } from "@/lib/sources/ingest";
 import { articlePath } from "@/lib/i18n/config";
+import { siteUrl } from "@/lib/site";
 
 export const revalidate = 3600;
 
@@ -32,7 +33,7 @@ export default async function EnArticlePage({ params }: Props) {
     getRelatedArticles(article),
   ]);
 
-  const url = `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://trendpulse.app"}${articlePath("en", slug)}`;
+  const url = `${siteUrl()}${articlePath("en", slug)}`;
 
   return (
     <>

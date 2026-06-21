@@ -4,11 +4,12 @@ import {
   generateDigest,
   startJob,
 } from "@/lib/ai/generate";
-import type { Locale } from "@/lib/types";
+import { activeLocales } from "@/lib/i18n/config";
+import { MAIN_CATEGORIES } from "@/lib/types";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
 
-const LOCALES: Locale[] = ["pl", "en"];
-const CATEGORIES = ["technology", "gaming", "ai"];
+const LOCALES = activeLocales;
+const CATEGORIES = MAIN_CATEGORIES;
 
 export async function POST(request: NextRequest) {
   if (!verifyCronSecret(request)) {

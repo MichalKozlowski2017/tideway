@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SiteFooter } from "@/components/site-footer";
+import { SITE_NAME, siteUrl } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,14 +16,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "TrendPulse",
-    template: "%s | TrendPulse",
+    default: SITE_NAME,
+    template: `%s | ${SITE_NAME}`,
   },
   description:
     "Automatyczne podsumowania trendów — technologia, gry, AI i więcej.",
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://trendpulse.app",
-  ),
+  metadataBase: new URL(siteUrl()),
 };
 
 export default function RootLayout({
@@ -34,11 +34,9 @@ export default function RootLayout({
       lang="pl"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900">
+      <body className="flex min-h-full flex-col bg-background text-foreground">
         {children}
-        <footer className="mt-auto border-t border-zinc-200 bg-white py-6 text-center text-sm text-zinc-500">
-          © {new Date().getFullYear()} TrendPulse
-        </footer>
+        <SiteFooter />
       </body>
     </html>
   );

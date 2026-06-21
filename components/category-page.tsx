@@ -1,7 +1,9 @@
 import type { Locale } from "@/lib/types";
-import { categoryLabels, ui } from "@/lib/i18n/config";
+import { ui } from "@/lib/i18n/config";
 import { ArticleCard } from "@/components/article-card";
+import { PageHeader } from "@/components/page-header";
 import type { Article } from "@/lib/types";
+import { categoryLabels } from "@/lib/i18n/config";
 
 export function CategoryPage({
   locale,
@@ -19,11 +21,9 @@ export function CategoryPage({
   const t = ui[locale];
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="text-3xl font-bold text-zinc-900">{labels.title}</h1>
-      <p className="mt-2 text-zinc-600">{labels.description}</p>
-
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+    <main className="mx-auto max-w-6xl px-4 py-12">
+      <PageHeader title={labels.title} description={labels.description} />
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {articles.length === 0 ? (
           <p className="text-zinc-500">{t.noArticles}</p>
         ) : (
