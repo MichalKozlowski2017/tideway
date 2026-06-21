@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TrendPulse
 
-## Getting Started
+Automatyczny serwis podsumowań trendów (PL + EN). Pobiera dane z Reddit, RSS, Google Trends i YouTube, generuje streszczenia przez AI i publikuje artykuły SEO-friendly.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router, ISR)
+- **Supabase** (Postgres)
+- **OpenAI** (gpt-4o-mini)
+- **Vercel Cron**
+
+## Quick start
 
 ```bash
+cp .env.local.example .env.local
+# Uzupełnij zmienne środowiskowe
+
+npm install
+npx supabase db push   # lub uruchom migracje w Supabase Dashboard
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Cron endpoints
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Wymagają nagłówka `Authorization: Bearer <CRON_SECRET>` lub `x-cron-secret`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Endpoint | Schedule |
+|----------|----------|
+| `/api/cron/ingest` | co 30 min |
+| `/api/cron/generate` | co 15 min |
+| `/api/cron/daily-rollup` | 06:00 UTC |
+| `/api/cron/weekly-rollup | pon 07:00 UTC |
 
-## Learn More
+## Deploy (Vercel)
 
-To learn more about Next.js, take a look at the following resources:
+1. Połącz repo z Vercel
+2. Ustaw env vars z `.env.local.example`
+3. `vercel.json` konfiguruje crony automatycznie
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Struktura URL
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| PL | EN |
+|----|-----|
+| `/trendy/technologia` | `/en/trends/technology` |
+| `/dzienny-przeglad` | `/en/daily-digest` |
+| `/artykul/[slug]` | `/en/article/[slug]` |
 
-## Deploy on Vercel
+## Koszt operacyjny (szacunek)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- MVP (30–60 artykułów/dzień): **5–18 USD/mies.**
+- API Reddit/RSS/Trends: darmowe w limitach
+- YouTube: opcjonalne, wymaga `YOUTUBE_API_KEY`

@@ -1,0 +1,114 @@
+import {
+  getSupabaseAdmin,
+  getSupabasePublic,
+  hasSupabaseConfig,
+} from "@/lib/db/supabase";
+import type { Article } from "@/lib/types";
+
+function mapArticle(row: Record<string, unknown>): Article {
+  return {
+    id: row.id as string,
+    slug: row.slug as string,
+    locale: row.locale as string,
+    category: row.category as string,
+    article_type: row.article_type as Article["article_type"],
+    seo_title: row.seo_title as string,
+    seo_description: row.seo_description as string,
+    headline: row.headline as string,
+    lead: row.lead as string,
+    summary: (row.summary as string[]) ?? [],
+    why_it_matters: row.why_it_matters as string,
+    tags: (row.tags as string[]) ?? [],
+    source_item_ids: (row.source_item_ids as string[]) ?? [],
+    published_at: row.published_at as string,
+    updated_at: row.updated_at as string,
+    is_published: row.is_published as boolean,
+  };
+}
+
+export async function getArticles(params: {
+  locale: string;
+  category?: string;
+  articleType?: string;
+  limit?: number;
+}): Promise<Article[]> {
+  if (!hasSupabaseConfig()) return [];
+  const client = getSupabasePublic();
+  let query = client
+    .from("articles")
+    .select("*")
+    .eq("locale", params.locale)
+    .eq("is_published", true)
+    .order("published_at", { ascending: false })
+    .limit(params.limit ?? 20);
+
+  if (params.category) query = query.eq("category", params.category);
+  if (params.articleType) query = query.eq("article_type", params.articleType);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapArticle);
+}
+
+export async function getArticleBySlug(
+  locale: string,
+  slug: string,
+): Promise<Article | null> {
+  if (!hasSupabaseConfig()) return null;
+  const client = getSupabasePublic();
+  const { data, error } = await client
+    .from("articles")
+    .select("*")
+    .eq("locale", locale)
+    .eq("slug", slug)
+    .eq("is_published", true)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? mapArticle(data) : null;
+}
+
+export async function getRelatedArticles(
+  article: Article,
+  limit = 4,
+): Promise<Article[]> {
+  if (!hasSupabaseConfig()) return [];
+  const client = getSupabasePublic();
+  const { data, error } = await client
+    .from("articles")
+    .select("*")
+    .eq("locale", article.locale)
+    .eq("category", article.category)
+    .eq("is_published", true)
+    .neq("id", article.id)
+    .order("published_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return (data ?? []).map(mapArticle);
+}
+
+export async function getAllArticleSlugs(): Promise<
+  Array<{ locale: string; slug: string; updated_at: string }>
+> {
+  if (!hasSupabaseConfig()) return [];
+  const client = getSupabaseAdmin();
+  const { data, error } = await client
+    .from("articles")
+    .select("locale, slug, updated_at")
+    .eq("is_published", true);
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getLatestJobStatus() {
+  if (!hasSupabaseConfig()) return [];
+  const client = getSupabaseAdmin();
+  const { data } = await client
+    .from("generation_jobs")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(5);
+  return data ?? [];
+}

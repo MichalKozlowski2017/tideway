@@ -2,21 +2,21 @@ import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
 import { ArticleCard } from "@/components/article-card";
 import { getArticles } from "@/lib/db/queries";
-import { ui, categoryLabels } from "@/lib/i18n/config";
+import { ui } from "@/lib/i18n/config";
 import { categorySlug, type Category } from "@/lib/types";
 
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: "TrendPulse — co dziś w trendach",
+  title: "TrendPulse — today's trends",
   description:
-    "Automatyczne podsumowania trendów: technologia, gry, AI i więcej.",
+    "Automated trend summaries: technology, gaming, AI, and more.",
 };
 
 const FEATURED: Category[] = ["technology", "gaming", "ai"];
 
-export default async function HomePage() {
-  const locale = "pl" as const;
+export default async function EnHomePage() {
+  const locale = "en" as const;
   const t = ui[locale];
   const articles = await getArticles({ locale, limit: 12 });
 
@@ -31,10 +31,10 @@ export default async function HomePage() {
           {FEATURED.map((cat) => (
             <a
               key={cat}
-              href={`/trendy/${categorySlug(locale, cat)}`}
+              href={`/en/trends/${categorySlug(locale, cat)}`}
               className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white hover:bg-zinc-700"
             >
-              {categoryLabels[locale][cat].title}
+              {cat === "technology" ? "Technology" : cat === "gaming" ? "Gaming" : "AI"}
             </a>
           ))}
         </div>
