@@ -1,5 +1,8 @@
 export const SITE_NAME = "Tideway";
 
+/** Public contact for legal / privacy inquiries. */
+export const CONTACT_EMAIL = "mkdev.appslab@gmail.com";
+
 /** Canonical production URL (PL-first). */
 export const PRIMARY_SITE_URL = "https://tideway.pl";
 

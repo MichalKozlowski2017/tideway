@@ -104,6 +104,9 @@ export const ui: Record<
     digests: string;
     siteName: string;
     siteTagline: string;
+    aboutPage: string;
+    privacyPage: string;
+    aiDisclosure: string;
     rising: string;
     falling: string;
   }
@@ -132,6 +135,9 @@ export const ui: Record<
     digests: "Przeglądy",
     siteName: "Tideway",
     siteTagline: "Co dziś w sieci",
+    aboutPage: "O nas",
+    privacyPage: "Polityka prywatności",
+    aiDisclosure: "Streszczenie AI",
     rising: "Co rośnie",
     falling: "Co spada",
   },
@@ -159,6 +165,9 @@ export const ui: Record<
     digests: "Digests",
     siteName: "Tideway",
     siteTagline: "What's online today",
+    aboutPage: "About",
+    privacyPage: "Privacy policy",
+    aiDisclosure: "AI summary",
     rising: "Rising",
     falling: "Falling",
   },
@@ -192,4 +201,14 @@ export function tagPath(locale: Locale, slug: string): string {
 export function homePath(locale: Locale): string {
   if (locale === "pl") return "/";
   return "/en";
+}
+
+export function aboutPath(locale: Locale): string {
+  if (locale === "pl") return "/o-nas";
+  return "/en/about";
+}
+
+export function privacyPath(locale: Locale): string {
+  if (locale === "pl") return "/polityka-prywatnosci";
+  return "/en/privacy";
 }

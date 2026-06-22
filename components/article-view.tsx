@@ -77,7 +77,15 @@ export function ArticleView({
           <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
             {formatLabel}
           </span>
+          <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-200">
+            {t.aiDisclosure}
+          </span>
         </div>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+          {locale === "pl"
+            ? "Treść wygenerowana automatycznie na podstawie publicznych źródeł. Sprawdź oryginał w sekcji poniżej."
+            : "Automatically generated from public sources. See the original link below."}
+        </p>
         <h1 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-900 md:text-[2.5rem] md:leading-tight">
           {article.headline}
         </h1>

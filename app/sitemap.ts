@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllArticleSlugs, getDistinctTags } from "@/lib/db/queries";
-import { articlePath, categoryPath, dailyDigestPath, weeklyDigestPath, tagPath, activeLocales } from "@/lib/i18n/config";
+import { articlePath, categoryPath, dailyDigestPath, weeklyDigestPath, tagPath, aboutPath, privacyPath, activeLocales } from "@/lib/i18n/config";
 import { categorySlug, MAIN_CATEGORIES, type Locale } from "@/lib/types";
 import { hasSupabaseConfig } from "@/lib/db/supabase";
 import { siteUrl } from "@/lib/site";
@@ -14,6 +14,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: base, changeFrequency: "hourly", priority: 1 },
     { url: `${base}${dailyDigestPath("pl")}`, changeFrequency: "daily", priority: 0.8 },
     { url: `${base}${weeklyDigestPath("pl")}`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${base}${aboutPath("pl")}`, changeFrequency: "monthly", priority: 0.3 },
+    { url: `${base}${privacyPath("pl")}`, changeFrequency: "monthly", priority: 0.3 },
   ];
 
   for (const locale of LOCALES) {
