@@ -12,17 +12,6 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   analysis: { pl: "Analiza", en: "Analysis" },
 };
 
-export function AdSlot() {
-  return (
-    <div
-      className="my-10 flex h-24 items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 text-xs text-zinc-400"
-      aria-hidden
-    >
-      —
-    </div>
-  );
-}
-
 function BodyParagraphs({ body }: { body: string }) {
   const paragraphs = body.split(/\n\n+/).filter(Boolean);
   return (
@@ -108,8 +97,6 @@ export function ArticleView({
           <BodyParagraphs body={content.body} />
         </section>
       )}
-
-      <AdSlot />
 
       {content.highlights && content.highlights.length > 0 && (
         <section className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-zinc-950/5">
