@@ -134,7 +134,7 @@ export const ui: Record<
     categories: "Kategorie",
     digests: "Przeglądy",
     siteName: "Tideway",
-    siteTagline: "Co dziś w sieci",
+    siteTagline: "Co dziś grzeje w sieci",
     aboutPage: "O nas",
     privacyPage: "Polityka prywatności",
     aiDisclosure: "Streszczenie AI",
