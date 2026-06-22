@@ -87,9 +87,9 @@ const COMMUNITY_LEAD_EN =
 const META_LEAD_PL = /^(artykuł|w artykule|tematem|najnowszy artykuł)\b/i;
 
 const MIN_BODY: Record<ArticleFormat, number> = {
-  story: 500,
-  analysis: 600,
-  community: 350,
+  story: 450,
+  analysis: 500,
+  community: 300,
   brief: 0,
 };
 
@@ -163,8 +163,8 @@ export function normalizeGeneratedArticle(
   }
 
   if (format === "brief") {
-    if (!item.highlights || item.highlights.length < 4) return null;
-    if (item.highlights.some((h) => h.length < 25)) return null;
+    if (!item.highlights || item.highlights.length < 3) return null;
+    if (item.highlights.some((h) => h.length < 18)) return null;
   }
 
   if (

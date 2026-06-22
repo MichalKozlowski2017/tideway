@@ -16,10 +16,11 @@ import {
 import type { Article, Category, Locale, RawItem, Source } from "@/lib/types";
 import { GENERATION_CATEGORIES } from "@/lib/types";
 import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
+import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
-const BATCH_SIZE = 5;
-const PENDING_POOL_SIZE = 150;
+const BATCH_SIZE = 8;
+const PENDING_POOL_SIZE = 250;
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -129,9 +130,18 @@ function selectBatch(items: PendingItem[]): PendingItem[] {
     return true;
   };
 
-  // One slot per category (AI, sport, finance first)
+  // AI backlog: up to 2 slots when items are available
+  if (byCategory.get("ai")?.length) {
+    takeFrom("ai");
+    if (batch.length < BATCH_SIZE && byCategory.get("ai")?.length) {
+      takeFrom("ai");
+    }
+  }
+
+  // One slot per remaining category (sport, finance, gaming, technology)
   for (const cat of GENERATION_CATEGORIES) {
     if (batch.length >= BATCH_SIZE) break;
+    if (cat === "ai") continue;
     takeFrom(cat);
   }
 
@@ -274,10 +284,15 @@ export async function generatePendingArticles(): Promise<{
       tokensUsed += attemptTokens;
 
       if (!generatedItem) {
-        console.log("  ✗ odrzucono (walidacja lub API)");
+        const skip = shouldSkipAfterGenerationFailure(rawItem.title, locale);
+        console.log(
+          skip
+            ? "  ✗ pominięto (źródło EN, walidacja PL)"
+            : "  ✗ odrzucono (walidacja lub API)",
+        );
         await supabase
           .from("raw_items")
-          .update({ status: "failed" })
+          .update({ status: skip ? "skipped" : "failed" })
           .eq("id", rawItem.id);
         continue;
       }

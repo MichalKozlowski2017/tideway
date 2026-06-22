@@ -15,7 +15,7 @@ export function parseArticleBody(summary: unknown): ArticleBody {
   if (summary && typeof summary === "object" && !Array.isArray(summary)) {
     const s = summary as ArticleBody;
     return {
-      format: s.format ?? "brief",
+      format: s.format ?? "story",
       body: s.body,
       highlights: s.highlights,
       contextNote: s.contextNote,
@@ -40,14 +40,13 @@ export function formatForSourceType(
     case "hacker_news":
     case "lobsters":
     case "reddit":
-      return "brief";
+      return "community";
     case "rss": {
       const roll = Math.random();
-      if (roll < 0.2) return "brief";
-      if (roll < 0.75) return "story";
+      if (roll < 0.55) return "story";
       return "analysis";
     }
     default:
-      return "brief";
+      return "story";
   }
 }

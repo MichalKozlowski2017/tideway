@@ -1,4 +1,5 @@
 import type { ArticleFormat } from "@/lib/ai/article-body";
+import { matchesLocale } from "@/lib/ai/locale-check";
 import type { Locale } from "@/lib/types";
 
 export type PromptItem = {
@@ -22,7 +23,7 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - section_titles.impact: creative heading (NOT "Dlaczego to ważne?" / "Potencjalne konsekwencje") e.g. "Co to zmienia na rynku"`,
   brief: `Format "brief":
 - lead: one punchy sentence with the key fact — company, number, date (min 60 chars)
-- highlights: 4 crisp facts as list items (numbers, names, dates) — each min 25 chars
+- highlights: 3–4 crisp facts as list items (numbers, names, dates) — each min 18 chars
 - body: omit
 - section_titles.highlights: creative heading (NOT "Najważniejsze punkty") e.g. "W skrócie"`,
   community: `Format "community":
@@ -50,8 +51,13 @@ export function buildSingleArticlePrompt(
     ? `CRITICAL: Every field (headline, lead, body, highlights, why_it_matters, tags) MUST be written entirely in ${lang}. Mixed language = invalid.`
     : `Write the entire article in ${lang} only — headline, lead, body, highlights, why_it_matters, and tags. Never mix languages.`;
 
-  return `You are a ${lang} editor at a tech publication. Write ONE unique article — NOT a template.
+  const sourceNote =
+    locale === "pl" && !matchesLocale(item.title, "pl")
+      ? "\nSource material may be in English — translate and write the full article in Polish only.\n"
+      : "";
 
+  return `You are a ${lang} editor at a tech publication. Write ONE unique article — NOT a template.
+${sourceNote}
 ${langRule}
 
 Category: ${category}
