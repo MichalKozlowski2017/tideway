@@ -1,4 +1,5 @@
 import type { NormalizedItem, Source } from "@/lib/types";
+import { enrichItemImageUrl } from "@/lib/sources/enrich-image";
 
 interface HnItem {
   id: number;
@@ -93,11 +94,15 @@ export async function fetchHackerNewsItems(
           ? await fetchSampleComments(item.kids, 2)
           : [];
 
+      const url = item.url ?? `https://news.ycombinator.com/item?id=${item.id}`;
+      const imageUrl = await enrichItemImageUrl({ url, imageUrl: null });
+
       return {
         externalId: String(item.id),
         title: item.title!,
         description: buildDescription(item, comments),
-        url: item.url ?? `https://news.ycombinator.com/item?id=${item.id}`,
+        url,
+        imageUrl,
         engagementScore: (item.score ?? 0) + (item.descendants ?? 0) * 2,
         publishedAt: item.time ? new Date(item.time * 1000) : null,
         sourceLabel: "Hacker News",

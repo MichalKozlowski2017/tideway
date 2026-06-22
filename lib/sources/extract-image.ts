@@ -31,10 +31,22 @@ export function pickLargestImageUrl(candidates: Array<string | undefined | null>
 export function extractImageFromHtml(html: string | undefined | null): string | null {
   if (!html) return null;
 
-  const ogMatch = html.match(
+  const metaPatterns = [
     /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/i,
+    /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i,
+  ];
+
+  for (const pattern of metaPatterns) {
+    const match = html.match(pattern);
+    if (match?.[1] && isValidImageUrl(match[1])) return match[1];
+  }
+
+  const linkMatch = html.match(
+    /<link[^>]+rel=["'](?:image_src|apple-touch-icon)["'][^>]+href=["']([^"']+)["']/i,
   );
-  if (ogMatch?.[1] && isValidImageUrl(ogMatch[1])) return ogMatch[1];
+  if (linkMatch?.[1] && isValidImageUrl(linkMatch[1])) return linkMatch[1];
 
   const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i);
   if (imgMatch?.[1] && isValidImageUrl(imgMatch[1])) return imgMatch[1];
@@ -48,6 +60,7 @@ type RssItem = {
   mediaContent?: RssMedia | RssMedia[];
   mediaThumbnail?: RssMedia | RssMedia[];
   content?: string;
+  contentEncoded?: string;
   "content:encoded"?: string;
   itunes?: { image?: string };
 };
@@ -77,6 +90,7 @@ export function extractImageFromRssItem(item: RssItem): string | null {
     mediaUrl(item.mediaThumbnail),
     item.itunes?.image,
     extractImageFromHtml(item.content),
+    extractImageFromHtml(item.contentEncoded),
     extractImageFromHtml(item["content:encoded"]),
   ]);
 }

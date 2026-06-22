@@ -15,7 +15,7 @@ import {
 } from "@/lib/sources/source-label";
 import type { Article, Category, Locale, RawItem, Source } from "@/lib/types";
 import { GENERATION_CATEGORIES } from "@/lib/types";
-import { resolveArticleImageUrl } from "@/lib/articles/resolve-image";
+import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
 const BATCH_SIZE = 5;
@@ -285,11 +285,12 @@ export async function generatePendingArticles(): Promise<{
       const baseSlug = slugify(generatedItem.slug_hint || rawItem.title);
       const slug = await ensureUniqueSlug(locale, baseSlug);
 
-      const imageUrl = await resolveArticleImageUrl({
-        sourceImageUrl: rawItem.image_url,
-        pageUrl: rawItem.url,
-        category,
-      });
+      const imageUrl =
+        (await resolveArticleImageUrl({
+          sourceImageUrl: rawItem.image_url,
+          pageUrl: rawItem.url,
+          category,
+        })) ?? CATEGORY_FALLBACK_IMAGE[category];
 
       const { error: articleError } = await supabase.from("articles").insert({
         slug,

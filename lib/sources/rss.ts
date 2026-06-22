@@ -11,6 +11,7 @@ const parser = new Parser({
     item: [
       ["media:content", "mediaContent", { keepArray: false }],
       ["media:thumbnail", "mediaThumbnail", { keepArray: false }],
+      ["content:encoded", "contentEncoded"],
     ],
   },
 });

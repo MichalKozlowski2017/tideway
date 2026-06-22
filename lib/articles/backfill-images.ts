@@ -1,4 +1,4 @@
-import { resolveArticleImageUrl } from "@/lib/articles/resolve-image";
+import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
 import type { Category } from "@/lib/types";
 import { getSupabaseAdmin } from "@/lib/db/supabase";
 
@@ -73,17 +73,12 @@ export async function backfillArticleImages(options?: {
       return;
     }
 
-    const imageUrl = await resolveArticleImageUrl({
-      sourceImageUrl: rawItem.image_url,
-      pageUrl: rawItem.url,
-      category: article.category as Category,
-    });
-
-    if (!imageUrl) {
-      failed += 1;
-      console.log(`✗ ${article.headline.slice(0, 50)} — bez obrazu`);
-      return;
-    }
+    const imageUrl =
+      (await resolveArticleImageUrl({
+        sourceImageUrl: rawItem.image_url,
+        pageUrl: rawItem.url,
+        category: article.category as Category,
+      })) ?? CATEGORY_FALLBACK_IMAGE[article.category as Category] ?? CATEGORY_FALLBACK_IMAGE.technology;
 
     const { error: articleError } = await supabase
       .from("articles")

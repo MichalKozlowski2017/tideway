@@ -1,7 +1,15 @@
 import Parser from "rss-parser";
 import type { NormalizedItem, Source } from "@/lib/types";
+import { extractImageFromRssItem } from "@/lib/sources/extract-image";
 
-const parser = new Parser();
+const parser = new Parser({
+  customFields: {
+    item: [
+      ["media:content", "mediaContent", { keepArray: false }],
+      ["media:thumbnail", "mediaThumbnail", { keepArray: false }],
+    ],
+  },
+});
 
 const LOBSTERS_FEEDS: Record<string, string> = {
   default: "https://lobste.rs/rss",
@@ -34,6 +42,7 @@ export async function fetchLobstersItems(
       title: item.title ?? "Untitled",
       description,
       url: item.link?.split("#")[0] ?? feedUrl,
+      imageUrl: extractImageFromRssItem(item),
       engagementScore: 0,
       publishedAt: item.pubDate ? new Date(item.pubDate) : null,
       sourceLabel: tag === "default" ? "Lobsters" : `Lobsters /${tag}`,
