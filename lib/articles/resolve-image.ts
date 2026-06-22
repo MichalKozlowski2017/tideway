@@ -32,7 +32,7 @@ export const CATEGORY_FALLBACK_IMAGE: Record<Category, string> = {
     "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&h=630&fit=crop&q=80",
   ai: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1200&h=630&fit=crop&q=80",
   sport:
-    "https://images.unsplash.com/photo-1461896836934-ff607b783f0d?w=1200&h=630&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=1200&h=630&fit=crop&q=80",
   finance:
     "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&h=630&fit=crop&q=80",
 };
