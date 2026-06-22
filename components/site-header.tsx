@@ -27,7 +27,7 @@ export function SiteHeader({ locale }: { locale: Locale }) {
               {t.siteName}
             </span>
             <span className="block truncate text-xs text-zinc-500">
-              {locale === "pl" ? "Trendy na co dzień" : "Daily trends"}
+              {t.siteTagline}
             </span>
           </span>
         </Link>

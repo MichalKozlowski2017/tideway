@@ -103,6 +103,7 @@ export const ui: Record<
     categories: string;
     digests: string;
     siteName: string;
+    siteTagline: string;
     rising: string;
     falling: string;
   }
@@ -110,7 +111,7 @@ export const ui: Record<
   pl: {
     homeTitle: "Tideway — co dziś w trendach",
     homeDescription:
-      "Automatyczne podsumowania trendów: technologia, gry, AI, sport i finanse.",
+      "Co dziś grzeje w sieci — tech, gry, sport i finanse. Zebrane i opisane, żebyś nie musiał przewijać setek linków.",
     dailyDigest: "Dzienny przegląd",
     weeklyDigest: "Tygodniowy przegląd",
     keyPoints: "Najważniejsze punkty",
@@ -130,13 +131,14 @@ export const ui: Record<
     categories: "Kategorie",
     digests: "Przeglądy",
     siteName: "Tideway",
+    siteTagline: "Co dziś w sieci",
     rising: "Co rośnie",
     falling: "Co spada",
   },
   en: {
     homeTitle: "Tideway — today's trends",
     homeDescription:
-      "Automated trend summaries: technology, gaming, AI, sports, and finance.",
+      "What's buzzing online today — tech, games, sports, and finance. Curated so you don't have to scroll through dozens of links.",
     dailyDigest: "Daily digest",
     weeklyDigest: "Weekly digest",
     keyPoints: "Key points",
@@ -156,6 +158,7 @@ export const ui: Record<
     categories: "Categories",
     digests: "Digests",
     siteName: "Tideway",
+    siteTagline: "What's online today",
     rising: "Rising",
     falling: "Falling",
   },

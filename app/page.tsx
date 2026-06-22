@@ -5,15 +5,13 @@ import { ArticleCard } from "@/components/article-card";
 import { PageHeader } from "@/components/page-header";
 import { getArticles } from "@/lib/db/queries";
 import { ui, categoryPath, categoryNavLabel } from "@/lib/i18n/config";
-import { SITE_NAME } from "@/lib/site";
 import { categorySlug, MAIN_CATEGORIES, type Category } from "@/lib/types";
 
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: "Tideway — co dziś w trendach",
-  description:
-    "Automatyczne podsumowania trendów: technologia, gry, AI, sport i finanse.",
+  title: ui.pl.homeTitle,
+  description: ui.pl.homeDescription,
 };
 
 export default async function HomePage() {
@@ -30,7 +28,7 @@ export default async function HomePage() {
             {locale === "pl" ? "Codzienne podsumowania" : "Daily summaries"}
           </p>
           <h1 className="mt-3 max-w-2xl text-4xl font-semibold tracking-tight text-zinc-900 md:text-5xl">
-            {t.homeTitle.replace(`${SITE_NAME} — `, "")}
+            {t.homeTitle.replace(`${t.siteName} — `, "")}
           </h1>
           <p className="mt-4 max-w-xl text-lg leading-relaxed text-zinc-500">
             {t.homeDescription}
