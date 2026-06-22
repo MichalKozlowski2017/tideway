@@ -351,7 +351,7 @@ export async function generateDigest(
 
   const { data: recent } = await supabase
     .from("articles")
-    .select("headline")
+    .select("headline, image_url")
     .eq("locale", locale)
     .eq("category", category)
     .eq("article_type", "trend_item")
@@ -360,6 +360,11 @@ export async function generateDigest(
     .limit(15);
 
   if (!recent?.length) return null;
+
+  const digestImageUrl =
+    recent.find((a) => a.image_url)?.image_url ??
+    CATEGORY_FALLBACK_IMAGE[category as Category] ??
+    CATEGORY_FALLBACK_IMAGE.technology;
 
   const prompt = buildDigestPrompt(
     locale,
@@ -389,6 +394,7 @@ export async function generateDigest(
       seo_description: digest.seo_description,
       headline: digest.headline,
       lead: digest.lead,
+      image_url: digestImageUrl,
       summary: digest.bullet_points,
       why_it_matters: digest.why_it_matters,
       tags: digest.tags,

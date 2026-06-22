@@ -54,10 +54,26 @@ export async function backfillArticleImages(options?: {
   let failed = 0;
 
   await mapPool(articles as ArticleRow[], concurrency, async (article) => {
+    const category = article.category as Category;
     const rawItemId = article.source_item_ids[0];
+
     if (!rawItemId) {
-      failed += 1;
-      console.log(`✗ ${article.headline.slice(0, 50)} — brak źródła`);
+      const imageUrl =
+        CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.technology;
+
+      const { error: articleError } = await supabase
+        .from("articles")
+        .update({ image_url: imageUrl })
+        .eq("id", article.id);
+
+      if (articleError) {
+        failed += 1;
+        console.log(`✗ ${article.headline.slice(0, 50)} — ${articleError.message}`);
+        return;
+      }
+
+      updated += 1;
+      console.log(`✓ ${article.headline.slice(0, 60)} (fallback)`);
       return;
     }
 
@@ -77,8 +93,8 @@ export async function backfillArticleImages(options?: {
       (await resolveArticleImageUrl({
         sourceImageUrl: rawItem.image_url,
         pageUrl: rawItem.url,
-        category: article.category as Category,
-      })) ?? CATEGORY_FALLBACK_IMAGE[article.category as Category] ?? CATEGORY_FALLBACK_IMAGE.technology;
+        category,
+      })) ?? CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.technology;
 
     const { error: articleError } = await supabase
       .from("articles")
