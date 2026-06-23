@@ -113,6 +113,10 @@ export const ui: Record<
     feedProgress: string;
     feedRetry: string;
     feedRss: string;
+    share: string;
+    shareNative: string;
+    copyLink: string;
+    linkCopied: string;
   }
 > = {
   pl: {
@@ -148,6 +152,10 @@ export const ui: Record<
     feedProgress: "Wyświetlono {shown} z {total}",
     feedRetry: "Nie udało się załadować — spróbuj ponownie",
     feedRss: "Kanał RSS",
+    share: "Udostępnij",
+    shareNative: "Udostępnij…",
+    copyLink: "Kopiuj link",
+    linkCopied: "Skopiowano!",
   },
   en: {
     homeTitle: "Tideway — today's trends",
@@ -182,6 +190,10 @@ export const ui: Record<
     feedProgress: "Showing {shown} of {total}",
     feedRetry: "Couldn't load more — tap to retry",
     feedRss: "RSS feed",
+    share: "Share",
+    shareNative: "Share…",
+    copyLink: "Copy link",
+    linkCopied: "Copied!",
   },
 };
 

@@ -1,9 +1,11 @@
 import type { Article, Locale } from "@/lib/types";
 import { parseArticleBody } from "@/lib/ai/article-body";
-import { ui } from "@/lib/i18n/config";
+import { articlePath, ui } from "@/lib/i18n/config";
 import { ArticleCard } from "@/components/article-card";
 import { ArticleImage } from "@/components/article-image";
+import { ArticleShare } from "@/components/article-share";
 import { TagLink } from "@/components/tag-link";
+import { siteUrl } from "@/lib/site";
 
 const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   story: { pl: "Reportaż", en: "Story" },
@@ -42,6 +44,7 @@ export function ArticleView({
     content.sectionTitles?.highlights ?? t.keyPoints;
   const impactTitle =
     content.sectionTitles?.impact ?? t.whyItMatters;
+  const shareUrl = `${siteUrl()}${articlePath(locale, article.slug)}`;
 
   return (
     <article className="mx-auto max-w-3xl px-4 py-12">
@@ -81,6 +84,11 @@ export function ArticleView({
         <p className="mt-5 text-xl leading-relaxed text-zinc-500">
           {article.lead}
         </p>
+        <ArticleShare
+          url={shareUrl}
+          title={article.headline}
+          locale={locale}
+        />
       </header>
 
       {content.format === "community" && content.contextNote && (
