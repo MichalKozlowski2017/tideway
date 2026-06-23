@@ -8,6 +8,9 @@ import { siteUrl } from "@/lib/site";
 const CATEGORIES = MAIN_CATEGORIES;
 const LOCALES = activeLocales;
 
+/** Regenerate sitemap from DB every 5 min (matches homepage / category pages). */
+export const revalidate = 300;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();
   const staticRoutes: MetadataRoute.Sitemap = [
