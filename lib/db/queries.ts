@@ -62,6 +62,16 @@ export async function getArticles(params: {
   return (data ?? []).map(mapArticle);
 }
 
+export async function getArticlesForFeed(params: {
+  locale: string;
+  limit?: number;
+}): Promise<Article[]> {
+  return getArticles({
+    locale: params.locale,
+    limit: params.limit ?? 50,
+  });
+}
+
 function paginateRange(page: number, pageSize: number) {
   const safePage = Math.max(1, page);
   const from = (safePage - 1) * pageSize;

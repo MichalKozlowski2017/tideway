@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { aboutPath, privacyPath, ui } from "@/lib/i18n/config";
+import { RSS_FEED_PATH } from "@/lib/site";
 import type { Locale } from "@/lib/types";
 
 export function SiteFooter({ locale = "pl" }: { locale?: Locale }) {
@@ -26,6 +27,12 @@ export function SiteFooter({ locale = "pl" }: { locale?: Locale }) {
               className="text-zinc-500 transition hover:text-zinc-900"
             >
               {t.privacyPage}
+            </Link>
+            <Link
+              href={RSS_FEED_PATH}
+              className="text-zinc-500 transition hover:text-zinc-900"
+            >
+              {t.feedRss}
             </Link>
           </nav>
         </div>

@@ -16,6 +16,7 @@ import {
 import type { Article, Category, Locale, RawItem, Source } from "@/lib/types";
 import { GENERATION_CATEGORIES } from "@/lib/types";
 import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
+import { articlePublicUrl, notifyIndexNow } from "@/lib/seo/indexnow";
 import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
@@ -230,6 +231,7 @@ export async function generatePendingArticles(): Promise<{
 
   let generated = 0;
   let tokensUsed = 0;
+  const indexNowUrls: string[] = [];
 
   for (const [key, groupItems] of grouped) {
     const [locale, category] = key.split(":") as [Locale, Category];
@@ -344,9 +346,12 @@ export async function generatePendingArticles(): Promise<{
         .eq("id", rawItem.id);
 
       generated += 1;
+      indexNowUrls.push(articlePublicUrl(locale, slug));
       console.log(`  ✓ ${slug}`);
     }
   }
+
+  await notifyIndexNow(indexNowUrls);
 
   return { generated, tokensUsed, skippedTrends, skippedDuplicates };
 }
@@ -420,6 +425,8 @@ export async function generateDigest(
     .single();
 
   if (error || !article) return null;
+
+  await notifyIndexNow([articlePublicUrl(locale, slug)]);
 
   await supabase.from("daily_rollups").upsert(
     {

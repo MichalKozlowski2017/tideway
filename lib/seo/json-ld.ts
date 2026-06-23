@@ -1,7 +1,14 @@
 import type { Article } from "@/lib/types";
-import { SITE_NAME } from "@/lib/site";
+import { PUBLISHER_LOGO_URL, SITE_NAME } from "@/lib/site";
 
 export function articleJsonLd(article: Article, url: string) {
+  const image = article.image_url
+    ? {
+        "@type": "ImageObject",
+        url: article.image_url,
+      }
+    : undefined;
+
   return {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
@@ -11,6 +18,7 @@ export function articleJsonLd(article: Article, url: string) {
     dateModified: article.updated_at,
     keywords: article.tags.join(", "),
     url,
+    image,
     author: {
       "@type": "Organization",
       name: SITE_NAME,
@@ -18,6 +26,12 @@ export function articleJsonLd(article: Article, url: string) {
     publisher: {
       "@type": "Organization",
       name: SITE_NAME,
+      logo: {
+        "@type": "ImageObject",
+        url: PUBLISHER_LOGO_URL,
+        width: 512,
+        height: 512,
+      },
     },
   };
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ArticleView } from "@/components/article-view";
 import { SiteHeader } from "@/components/site-header";
+import { buildArticleMetadata } from "@/lib/seo/article-metadata";
 import { articleJsonLd } from "@/lib/seo/json-ld";
 import { getArticleBySlug, getRelatedArticles } from "@/lib/db/queries";
 import { getSourceItemsForArticle } from "@/lib/sources/ingest";
@@ -16,16 +17,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const article = await getArticleBySlug("pl", slug);
   if (!article) return {};
-  return {
-    title: article.seo_title,
-    description: article.seo_description,
-    keywords: article.tags,
-    openGraph: article.image_url
-      ? {
-          images: [{ url: article.image_url, alt: article.headline }],
-        }
-      : undefined,
-  };
+  return buildArticleMetadata(article, "pl");
 }
 
 export default async function ArticlePage({ params }: Props) {

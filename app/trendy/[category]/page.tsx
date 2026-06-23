@@ -3,9 +3,9 @@ import { notFound } from "next/navigation";
 import { CategoryPage } from "@/components/category-page";
 import { SiteHeader } from "@/components/site-header";
 import { getArticlesPaginated } from "@/lib/db/queries";
-import { categoryLabels } from "@/lib/i18n/config";
-import { SITE_NAME } from "@/lib/site";
-import { categoryFromSlug } from "@/lib/types";
+import { categoryLabels, categoryPath } from "@/lib/i18n/config";
+import { SITE_NAME, siteUrl } from "@/lib/site";
+import { categoryFromSlug, categorySlug } from "@/lib/types";
 
 export const revalidate = 300;
 
@@ -16,9 +16,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const category = categoryFromSlug(slug);
   if (!category) return {};
   const labels = categoryLabels.pl[category];
+  const canonical = `${siteUrl()}${categoryPath("pl", categorySlug("pl", category))}`;
   return {
     title: `${labels.title} | ${SITE_NAME}`,
     description: labels.description,
+    alternates: { canonical },
+    openGraph: {
+      type: "website",
+      url: canonical,
+      title: labels.title,
+      description: labels.description,
+      siteName: SITE_NAME,
+    },
   };
 }
 

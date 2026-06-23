@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tideway">
+  <rect width="512" height="512" rx="112" fill="#2563eb"/>
+  <path fill="#ffffff" d="M96 328c48-88 112-132 192-132 56 0 96 20 128 60l-52 44c-24-28-52-42-88-42-56 0-96 32-120 88l-60-18z"/>
+  <path fill="#dbeafe" d="M128 360c36-52 84-78 144-78 40 0 72 14 96 42l-40 32c-18-20-40-30-68-30-44 0-76 24-96 62l-36-28z"/>
+</svg>

@@ -112,6 +112,7 @@ export const ui: Record<
     feedLoading: string;
     feedProgress: string;
     feedRetry: string;
+    feedRss: string;
   }
 > = {
   pl: {
@@ -146,6 +147,7 @@ export const ui: Record<
     feedLoading: "Ładowanie kolejnych artykułów…",
     feedProgress: "Wyświetlono {shown} z {total}",
     feedRetry: "Nie udało się załadować — spróbuj ponownie",
+    feedRss: "Kanał RSS",
   },
   en: {
     homeTitle: "Tideway — today's trends",
@@ -179,6 +181,7 @@ export const ui: Record<
     feedLoading: "Loading more articles…",
     feedProgress: "Showing {shown} of {total}",
     feedRetry: "Couldn't load more — tap to retry",
+    feedRss: "RSS feed",
   },
 };
 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SiteFooter } from "@/components/site-footer";
-import { SITE_NAME, siteUrl } from "@/lib/site";
+import { SITE_NAME, RSS_FEED_PATH, siteUrl } from "@/lib/site";
 import { ui } from "@/lib/i18n/config";
 import "./globals.css";
 
@@ -23,6 +23,19 @@ export const metadata: Metadata = {
   },
   description: ui.pl.homeDescription,
   metadataBase: new URL(siteUrl()),
+  alternates: {
+    types: {
+      "application/rss+xml": RSS_FEED_PATH,
+    },
+  },
+  openGraph: {
+    type: "website",
+    locale: "pl_PL",
+    siteName: SITE_NAME,
+    title: SITE_NAME,
+    description: ui.pl.homeDescription,
+    url: siteUrl(),
+  },
 };
 
 export default function RootLayout({
