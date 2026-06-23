@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CategoryPage } from "@/components/category-page";
 import { SiteHeader } from "@/components/site-header";
-import { getArticles } from "@/lib/db/queries";
+import { getArticlesPaginated } from "@/lib/db/queries";
 import { categoryLabels } from "@/lib/i18n/config";
 import { SITE_NAME } from "@/lib/site";
 import { categoryFromSlug } from "@/lib/types";
@@ -27,16 +27,19 @@ export default async function TrendyCategoryPage({ params }: Props) {
   const category = categoryFromSlug(slug);
   if (!category) notFound();
 
-  const articles = await getArticles({
-    locale: "pl",
-    category,
-    limit: 24,
-  });
+  const locale = "pl" as const;
+  const result = await getArticlesPaginated({ locale, category, page: 1 });
 
   return (
     <>
-      <SiteHeader locale="pl" />
-      <CategoryPage locale="pl" category={category} articles={articles} />
+      <SiteHeader locale={locale} />
+      <CategoryPage
+        locale={locale}
+        category={category}
+        articles={result.articles}
+        total={result.total}
+        totalPages={result.totalPages}
+      />
     </>
   );
 }

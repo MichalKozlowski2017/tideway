@@ -16,11 +16,11 @@ export const categoryLabels: Record<
   pl: {
     technology: {
       title: "Trendy w technologii",
-      description: "Najświeższe podsumowania z Reddit, RSS i Google Trends.",
+      description: "Najświeższe wiadomości tech.",
     },
     gaming: {
       title: "Trendy w grach",
-      description: "Co dziś grzeje w gamingu — skróty i kontekst.",
+      description: "Co dziś grzeje w grach.",
     },
     ai: {
       title: "Trendy AI",
@@ -38,11 +38,11 @@ export const categoryLabels: Record<
   en: {
     technology: {
       title: "Technology trends",
-      description: "Fresh summaries from Reddit, RSS, and Google Trends.",
+      description: "The latest tech news.",
     },
     gaming: {
       title: "Gaming trends",
-      description: "What is hot in gaming today — context included.",
+      description: "What's hot in gaming today.",
     },
     ai: {
       title: "AI trends",
@@ -109,6 +109,9 @@ export const ui: Record<
     aiDisclosure: string;
     rising: string;
     falling: string;
+    feedLoading: string;
+    feedProgress: string;
+    feedRetry: string;
   }
 > = {
   pl: {
@@ -140,6 +143,9 @@ export const ui: Record<
     aiDisclosure: "Streszczenie AI",
     rising: "Co rośnie",
     falling: "Co spada",
+    feedLoading: "Ładowanie kolejnych artykułów…",
+    feedProgress: "Wyświetlono {shown} z {total}",
+    feedRetry: "Nie udało się załadować — spróbuj ponownie",
   },
   en: {
     homeTitle: "Tideway — today's trends",
@@ -170,6 +176,9 @@ export const ui: Record<
     aiDisclosure: "AI summary",
     rising: "Rising",
     falling: "Falling",
+    feedLoading: "Loading more articles…",
+    feedProgress: "Showing {shown} of {total}",
+    feedRetry: "Couldn't load more — tap to retry",
   },
 };
 

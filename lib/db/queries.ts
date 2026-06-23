@@ -6,6 +6,16 @@ import {
 import { tagSlug } from "@/lib/tags";
 import type { Article } from "@/lib/types";
 
+export const ARTICLES_PAGE_SIZE = 24;
+
+export type PaginatedArticles = {
+  articles: Article[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
 function mapArticle(row: Record<string, unknown>): Article {
   return {
     id: row.id as string,
@@ -50,6 +60,59 @@ export async function getArticles(params: {
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map(mapArticle);
+}
+
+function paginateRange(page: number, pageSize: number) {
+  const safePage = Math.max(1, page);
+  const from = (safePage - 1) * pageSize;
+  return { from, to: from + pageSize - 1, page: safePage };
+}
+
+function toPaginatedResult(
+  rows: Record<string, unknown>[] | null,
+  count: number | null,
+  page: number,
+  pageSize: number,
+): PaginatedArticles {
+  const total = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  return {
+    articles: (rows ?? []).map(mapArticle),
+    total,
+    page,
+    pageSize,
+    totalPages,
+  };
+}
+
+export async function getArticlesPaginated(params: {
+  locale: string;
+  category?: string;
+  articleType?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<PaginatedArticles> {
+  if (!hasSupabaseConfig()) {
+    return { articles: [], total: 0, page: 1, pageSize: ARTICLES_PAGE_SIZE, totalPages: 1 };
+  }
+
+  const pageSize = params.pageSize ?? ARTICLES_PAGE_SIZE;
+  const { from, to, page } = paginateRange(params.page ?? 1, pageSize);
+  const client = getSupabasePublic();
+
+  let query = client
+    .from("articles")
+    .select("*", { count: "exact" })
+    .eq("locale", params.locale)
+    .eq("is_published", true)
+    .order("published_at", { ascending: false });
+
+  if (params.category) query = query.eq("category", params.category);
+  if (params.articleType) query = query.eq("article_type", params.articleType);
+
+  const { data, error, count } = await query.range(from, to);
+  if (error) throw error;
+  return toPaginatedResult(data, count, page, pageSize);
 }
 
 export async function getArticleBySlug(
@@ -108,6 +171,33 @@ export async function getArticlesByTag(params: {
 
   if (error) throw error;
   return (data ?? []).map(mapArticle);
+}
+
+export async function getArticlesByTagPaginated(params: {
+  locale: string;
+  tag: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<PaginatedArticles> {
+  if (!hasSupabaseConfig()) {
+    return { articles: [], total: 0, page: 1, pageSize: ARTICLES_PAGE_SIZE, totalPages: 1 };
+  }
+
+  const pageSize = params.pageSize ?? ARTICLES_PAGE_SIZE;
+  const { from, to, page } = paginateRange(params.page ?? 1, pageSize);
+  const client = getSupabasePublic();
+
+  const { data, error, count } = await client
+    .from("articles")
+    .select("*", { count: "exact" })
+    .eq("locale", params.locale)
+    .eq("is_published", true)
+    .contains("tags", [params.tag])
+    .order("published_at", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return toPaginatedResult(data, count, page, pageSize);
 }
 
 export async function getDistinctTags(

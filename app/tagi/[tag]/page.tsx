@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { TagPage } from "@/components/tag-page";
-import { getArticlesByTag, resolveTagName } from "@/lib/db/queries";
+import { getArticlesByTagPaginated, resolveTagName } from "@/lib/db/queries";
 import { articlePath, tagPath, ui } from "@/lib/i18n/config";
 import { itemListJsonLd } from "@/lib/seo/json-ld";
 import { SITE_NAME, siteUrl } from "@/lib/site";
@@ -36,11 +36,16 @@ export default async function TagiPage({ params }: Props) {
   const tagName = await resolveTagName(locale, slug);
   if (!tagName) notFound();
 
-  const articles = await getArticlesByTag({ locale, tag: tagName, limit: 48 });
+  const result = await getArticlesByTagPaginated({
+    locale,
+    tag: tagName,
+    page: 1,
+  });
+
   const base = siteUrl();
   const listJsonLd = itemListJsonLd(
     ui[locale].tagPageTitle.replace("{tag}", tagName),
-    articles.map((article) => ({
+    result.articles.map((article) => ({
       name: article.headline,
       url: `${base}${articlePath(locale, article.slug)}`,
     })),
@@ -53,7 +58,13 @@ export default async function TagiPage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(listJsonLd) }}
       />
       <SiteHeader locale={locale} />
-      <TagPage locale={locale} tag={tagName} articles={articles} />
+      <TagPage
+        locale={locale}
+        tag={tagName}
+        articles={result.articles}
+        total={result.total}
+        totalPages={result.totalPages}
+      />
     </>
   );
 }
