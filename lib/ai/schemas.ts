@@ -185,12 +185,17 @@ export function normalizeGeneratedArticle(
   return item;
 }
 
+const digestBulletSchema = z.object({
+  text: z.string().min(10),
+  source_index: z.number().int().min(1),
+});
+
 export const digestResponseSchema = z.object({
   headline: z.string(),
   seo_title: z.string(),
   seo_description: z.string(),
   lead: z.string(),
-  bullet_points: z.array(z.string()).min(5).max(10),
+  bullet_points: z.array(digestBulletSchema).min(5).max(10),
   why_it_matters: z.string(),
   tags: z.array(z.string()),
   slug_hint: z.string(),

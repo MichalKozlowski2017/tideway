@@ -1,5 +1,7 @@
 import type { Article, Locale } from "@/lib/types";
+import type { DigestItem } from "@/lib/digest/items";
 import { parseArticleBody } from "@/lib/ai/article-body";
+import Link from "next/link";
 import { articlePath, ui } from "@/lib/i18n/config";
 import { ArticleCard } from "@/components/article-card";
 import { ArticleImage } from "@/components/article-image";
@@ -30,16 +32,24 @@ export function ArticleView({
   locale,
   sources,
   related,
+  digestItems = [],
 }: {
   article: Article;
   locale: Locale;
   sources: Array<{ title: string; url: string }>;
   related: Article[];
+  digestItems?: DigestItem[];
 }) {
   const t = ui[locale];
   const content = parseArticleBody(article.summary);
-  const formatLabel =
-    FORMAT_LABELS[content.format]?.[locale] ?? content.format;
+  const isDigest =
+    article.article_type === "daily_digest" ||
+    article.article_type === "weekly_digest";
+  const formatLabel = isDigest
+    ? locale === "pl"
+      ? "Przegląd"
+      : "Digest"
+    : (FORMAT_LABELS[content.format]?.[locale] ?? content.format);
   const highlightsTitle =
     content.sectionTitles?.highlights ?? t.keyPoints;
   const impactTitle =
@@ -106,7 +116,34 @@ export function ArticleView({
         </section>
       )}
 
-      {content.highlights && content.highlights.length > 0 && (
+      {digestItems.length > 0 && (
+        <section className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-zinc-950/5">
+          <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+            {highlightsTitle}
+          </h2>
+          <ul className="mt-4 space-y-3">
+            {digestItems.map((item) => (
+              <li
+                key={`${item.slug ?? "plain"}-${item.text.slice(0, 48)}`}
+                className="flex gap-3 leading-relaxed before:font-bold before:text-blue-500 before:content-['→']"
+              >
+                {item.slug ? (
+                  <Link
+                    href={articlePath(locale, item.slug)}
+                    className="text-zinc-700 transition hover:text-blue-700"
+                  >
+                    {item.text}
+                  </Link>
+                ) : (
+                  <span className="text-zinc-700">{item.text}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {!isDigest && content.highlights && content.highlights.length > 0 && (
         <section className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-zinc-950/5">
           <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
             {highlightsTitle}

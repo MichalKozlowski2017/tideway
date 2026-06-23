@@ -371,7 +371,7 @@ export async function generateDigest(
 
   const { data: recent } = await supabase
     .from("articles")
-    .select("headline, image_url")
+    .select("headline, slug, image_url")
     .eq("locale", locale)
     .eq("category", category)
     .eq("article_type", "trend_item")
@@ -386,15 +386,18 @@ export async function generateDigest(
     CATEGORY_FALLBACK_IMAGE[category as Category] ??
     CATEGORY_FALLBACK_IMAGE.technology;
 
-  const prompt = buildDigestPrompt(
-    locale,
-    digestType,
-    category,
-    recent.map((a) => a.headline),
-  );
+  const prompt = buildDigestPrompt(locale, digestType, category, recent);
 
   const { content } = await callOpenAI(prompt);
   const digest: DigestArticle = digestResponseSchema.parse(JSON.parse(content));
+
+  const digestSummary = {
+    format: "digest" as const,
+    items: digest.bullet_points.map((point) => ({
+      text: point.text,
+      slug: recent[point.source_index - 1]?.slug,
+    })),
+  };
 
   const articleType = digestType === "daily" ? "daily_digest" : "weekly_digest";
   const prefix = digestType === "daily" ? "dzienny" : "tygodniowy";
@@ -415,7 +418,7 @@ export async function generateDigest(
       headline: digest.headline,
       lead: digest.lead,
       image_url: digestImageUrl,
-      summary: digest.bullet_points,
+      summary: digestSummary,
       why_it_matters: digest.why_it_matters,
       tags: digest.tags,
       source_item_ids: [],

@@ -72,6 +72,36 @@ export async function getArticlesForFeed(params: {
   });
 }
 
+export async function getDigestLinkSources(params: {
+  locale: string;
+  category: string;
+  days: number;
+  limit?: number;
+}): Promise<Array<{ headline: string; slug: string }>> {
+  if (!hasSupabaseConfig()) return [];
+
+  const since = new Date();
+  since.setDate(since.getDate() - params.days);
+
+  const client = getSupabasePublic();
+  const { data, error } = await client
+    .from("articles")
+    .select("headline, slug")
+    .eq("locale", params.locale)
+    .eq("category", params.category)
+    .eq("article_type", "trend_item")
+    .eq("is_published", true)
+    .gte("published_at", since.toISOString())
+    .order("published_at", { ascending: false })
+    .limit(params.limit ?? 30);
+
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    headline: row.headline as string,
+    slug: row.slug as string,
+  }));
+}
+
 function paginateRange(page: number, pageSize: number) {
   const safePage = Math.max(1, page);
   const from = (safePage - 1) * pageSize;

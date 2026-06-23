@@ -96,7 +96,7 @@ export function buildDigestPrompt(
   locale: Locale,
   digestType: "daily" | "weekly",
   category: string,
-  headlines: string[],
+  sources: Array<{ headline: string }>,
 ): string {
   const lang = locale === "pl" ? "Polish" : "English";
   const period = digestType === "daily" ? "today" : "this week";
@@ -109,7 +109,9 @@ Return ONLY valid JSON:
   "seo_title": "string",
   "seo_description": "string",
   "lead": "string",
-  "bullet_points": ["5-10 items"],
+  "bullet_points": [
+    { "text": "one-sentence takeaway", "source_index": 1 }
+  ],
   "why_it_matters": "string",
   "tags": ["tags"],
   "slug_hint": "string",
@@ -117,6 +119,12 @@ Return ONLY valid JSON:
   "falling": ["3 falling topics"]
 }
 
-Top headlines to synthesize:
-${headlines.map((h, i) => `${i + 1}. ${h}`).join("\n")}`;
+Rules for bullet_points:
+- 5-10 items
+- Each item MUST include source_index (1-based) pointing to a headline from the list below
+- text: concise summary in ${lang}, not a copy of the headline
+- Use each source_index at most once when possible
+
+Headlines to synthesize:
+${sources.map((s, i) => `${i + 1}. ${s.headline}`).join("\n")}`;
 }
