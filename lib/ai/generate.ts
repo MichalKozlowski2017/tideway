@@ -10,6 +10,7 @@ import {
 } from "@/lib/ai/schemas";
 import { getSupabaseAdmin } from "@/lib/db/supabase";
 import {
+  ARTICLE_SOURCE_PRIORITY,
   buildSourceLabel,
   isArticleSourceType,
 } from "@/lib/sources/source-label";
@@ -22,6 +23,10 @@ import { contentHash, slugify } from "@/lib/utils/hash";
 
 const BATCH_SIZE = 8;
 const PENDING_POOL_SIZE = 250;
+const PENDING_FETCH_SIZE = 500;
+const AI_POOL_MIN = 50;
+const CATEGORY_POOL_MIN = 30;
+const AI_BATCH_SLOTS = 3;
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -103,17 +108,81 @@ async function hasExistingArticle(
   return (byUrl?.length ?? 0) > 0;
 }
 
-function selectBatch(items: PendingItem[]): PendingItem[] {
-  const rss = items
-    .filter((i) => i.sources.type === "rss")
-    .sort(
-      (a, b) =>
-        new Date(b.published_at ?? b.fetched_at).getTime() -
-        new Date(a.published_at ?? a.fetched_at).getTime(),
-    );
+function sortPendingItems(items: PendingItem[]): PendingItem[] {
+  return [...items].sort((a, b) => {
+    const dateDiff =
+      new Date(b.published_at ?? b.fetched_at).getTime() -
+      new Date(a.published_at ?? a.fetched_at).getTime();
+    if (dateDiff !== 0) return dateDiff;
 
+    const priorityA = ARTICLE_SOURCE_PRIORITY[a.sources.type] ?? 5;
+    const priorityB = ARTICLE_SOURCE_PRIORITY[b.sources.type] ?? 5;
+    return priorityA - priorityB;
+  });
+}
+
+function buildBalancedPool(items: PendingItem[]): PendingItem[] {
+  const articleItems = items.filter((item) =>
+    isArticleSourceType(item.sources.type),
+  );
   const byCategory = new Map<string, PendingItem[]>();
-  for (const item of rss) {
+
+  for (const item of articleItems) {
+    const cat = item.sources.category;
+    const list = byCategory.get(cat) ?? [];
+    list.push(item);
+    byCategory.set(cat, list);
+  }
+
+  for (const [cat, list] of byCategory) {
+    byCategory.set(cat, sortPendingItems(list));
+  }
+
+  const pool: PendingItem[] = [];
+  const usedIds = new Set<string>();
+
+  const takeFromCategory = (category: string, count: number) => {
+    const list = byCategory.get(category) ?? [];
+    const remaining: PendingItem[] = [];
+    let taken = 0;
+
+    for (const item of list) {
+      if (taken < count && !usedIds.has(item.id)) {
+        pool.push(item);
+        usedIds.add(item.id);
+        taken += 1;
+      } else {
+        remaining.push(item);
+      }
+    }
+
+    byCategory.set(category, remaining);
+  };
+
+  takeFromCategory("ai", AI_POOL_MIN);
+  for (const cat of GENERATION_CATEGORIES) {
+    if (cat === "ai") continue;
+    takeFromCategory(cat, CATEGORY_POOL_MIN);
+  }
+
+  const remainder = sortPendingItems(
+    [...byCategory.values()].flat().filter((item) => !usedIds.has(item.id)),
+  );
+
+  for (const item of remainder) {
+    if (pool.length >= PENDING_POOL_SIZE) break;
+    pool.push(item);
+    usedIds.add(item.id);
+  }
+
+  return pool;
+}
+
+function selectBatch(items: PendingItem[]): PendingItem[] {
+  const sorted = sortPendingItems(items);
+  const byCategory = new Map<string, PendingItem[]>();
+
+  for (const item of sorted) {
     const cat = item.sources.category;
     const list = byCategory.get(cat) ?? [];
     list.push(item);
@@ -131,22 +200,17 @@ function selectBatch(items: PendingItem[]): PendingItem[] {
     return true;
   };
 
-  // AI backlog: up to 2 slots when items are available
-  if (byCategory.get("ai")?.length) {
+  for (let i = 0; i < AI_BATCH_SLOTS && batch.length < BATCH_SIZE; i += 1) {
+    if (!byCategory.get("ai")?.length) break;
     takeFrom("ai");
-    if (batch.length < BATCH_SIZE && byCategory.get("ai")?.length) {
-      takeFrom("ai");
-    }
   }
 
-  // One slot per remaining category (sport, finance, gaming, technology)
   for (const cat of GENERATION_CATEGORIES) {
     if (batch.length >= BATCH_SIZE) break;
     if (cat === "ai") continue;
     takeFrom(cat);
   }
 
-  // Fill remaining slots — prefer categories with backlog
   while (batch.length < BATCH_SIZE) {
     let added = false;
     for (const cat of [...GENERATION_CATEGORIES].reverse()) {
@@ -172,7 +236,7 @@ export async function generatePendingArticles(): Promise<{
     .select("*, sources(category, locale, type, config)")
     .eq("status", "pending")
     .order("fetched_at", { ascending: false })
-    .limit(PENDING_POOL_SIZE);
+    .limit(PENDING_FETCH_SIZE);
 
   if (error) throw error;
   if (!pending?.length) {
@@ -180,9 +244,8 @@ export async function generatePendingArticles(): Promise<{
     return { generated: 0, tokensUsed: 0, skippedTrends: 0, skippedDuplicates: 0 };
   }
 
-  const items = (pending as PendingItem[]).filter((item) =>
-    isArticleSourceType(item.sources.type),
-  );
+  const pool = buildBalancedPool(pending as PendingItem[]);
+  const items = pool.filter((item) => isArticleSourceType(item.sources.type));
 
   let skippedTrends = 0;
   let skippedDuplicates = 0;
@@ -216,8 +279,9 @@ export async function generatePendingArticles(): Promise<{
     return { generated: 0, tokensUsed: 0, skippedTrends, skippedDuplicates };
   }
 
+  const aiInBatch = batch.filter((item) => item.sources.category === "ai").length;
   console.log(
-    `Batch: ${batch.length} artykułów (z ${eligible.length} pending, ${skippedDuplicates} duplikatów pominiętych)…`,
+    `Batch: ${batch.length} artykułów (AI: ${aiInBatch}, pula: ${pool.length}, eligible: ${eligible.length}, duplikaty: ${skippedDuplicates})…`,
   );
 
   const grouped = new Map<string, PendingItem[]>();
