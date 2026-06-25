@@ -11,6 +11,8 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   brief: { pl: "Skrót", en: "Brief" },
   community: { pl: "Dyskusja", en: "Community" },
   analysis: { pl: "Analiza", en: "Analysis" },
+  essay: { pl: "Esej", en: "Essay" },
+  synthesis: { pl: "Synteza", en: "Synthesis" },
 };
 
 export function ArticleCard({
@@ -22,7 +24,11 @@ export function ArticleCard({
 }) {
   const content = parseArticleBody(article.summary);
   const snippet =
-    content.body?.split("\n\n")[0]?.slice(0, 160) ?? article.lead;
+    content.body
+      ?.split("\n\n")
+      .find((block) => !block.trim().startsWith("## "))
+      ?.replace(/^##\s+/, "")
+      .slice(0, 160) ?? article.lead;
   const formatLabel =
     FORMAT_LABELS[content.format]?.[locale] ?? content.format;
   const categoryLabel = categoryNavLabel(

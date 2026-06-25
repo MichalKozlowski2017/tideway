@@ -1,6 +1,7 @@
 import type { Article, Locale } from "@/lib/types";
 import type { DigestItem } from "@/lib/digest/items";
-import { parseArticleBody } from "@/lib/ai/article-body";
+import { isLongReadFormat, parseArticleBody, parseBodyBlocks } from "@/lib/ai/article-body";
+import { estimateReadTimeMinutes, formatReadTime } from "@/lib/ai/read-time";
 import Link from "next/link";
 import { articlePath, ui } from "@/lib/i18n/config";
 import { ArticleCard } from "@/components/article-card";
@@ -14,15 +15,33 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   brief: { pl: "Skrót", en: "Brief" },
   community: { pl: "Dyskusja", en: "Community" },
   analysis: { pl: "Analiza", en: "Analysis" },
+  essay: { pl: "Esej", en: "Essay" },
+  synthesis: { pl: "Synteza", en: "Synthesis" },
 };
 
-function BodyParagraphs({ body }: { body: string }) {
-  const paragraphs = body.split(/\n\n+/).filter(Boolean);
+function ArticleBodyContent({ body, longRead }: { body: string; longRead: boolean }) {
+  const blocks = parseBodyBlocks(body);
+
   return (
-    <div className="space-y-5 text-[1.0625rem] leading-[1.75] text-zinc-700">
-      {paragraphs.map((p) => (
-        <p key={p.slice(0, 40)}>{p}</p>
-      ))}
+    <div
+      className={
+        longRead
+          ? "space-y-6 text-[1.125rem] leading-[1.85] text-zinc-700"
+          : "space-y-5 text-[1.0625rem] leading-[1.75] text-zinc-700"
+      }
+    >
+      {blocks.map((block) =>
+        block.type === "heading" ? (
+          <h2
+            key={`${block.type}-${block.text}`}
+            className="pt-2 text-xl font-semibold tracking-tight text-zinc-900"
+          >
+            {block.text}
+          </h2>
+        ) : (
+          <p key={`${block.type}-${block.text.slice(0, 48)}`}>{block.text}</p>
+        ),
+      )}
     </div>
   );
 }
@@ -55,9 +74,19 @@ export function ArticleView({
   const impactTitle =
     content.sectionTitles?.impact ?? t.whyItMatters;
   const shareUrl = `${siteUrl()}${articlePath(locale, article.slug)}`;
+  const longRead = isLongReadFormat(content.format);
+  const readTimeText = formatReadTime(
+    estimateReadTimeMinutes(
+      [article.lead, content.body ?? "", article.why_it_matters].join(" "),
+      locale,
+    ),
+    locale,
+  );
 
   return (
-    <article className="mx-auto max-w-3xl px-4 py-12">
+    <article
+      className={`mx-auto px-4 py-12 ${longRead ? "max-w-2xl" : "max-w-3xl"}`}
+    >
       <ArticleImage
         imageUrl={article.image_url}
         category={article.category}
@@ -76,6 +105,10 @@ export function ArticleView({
               locale === "pl" ? "pl-PL" : "en-US",
             )}
           </time>
+          <span aria-hidden className="text-zinc-300">
+            ·
+          </span>
+          <span className="text-zinc-400">{readTimeText}</span>
           <span aria-hidden className="text-zinc-300">
             ·
           </span>
@@ -115,7 +148,7 @@ export function ArticleView({
 
       {content.body && (
         <section className="mt-10">
-          <BodyParagraphs body={content.body} />
+          <ArticleBodyContent body={content.body} longRead={longRead} />
         </section>
       )}
 
@@ -176,9 +209,11 @@ export function ArticleView({
 
       <section
         className={
-          content.format === "analysis"
-            ? "mt-8 rounded-2xl bg-blue-50/60 px-6 py-6 ring-1 ring-blue-100"
-            : "mt-10"
+          longRead
+            ? "mt-10 rounded-2xl bg-blue-50/60 px-6 py-6 ring-1 ring-blue-100"
+            : content.format === "analysis"
+              ? "mt-8 rounded-2xl bg-blue-50/60 px-6 py-6 ring-1 ring-blue-100"
+              : "mt-10"
         }
       >
         <h2 className="text-lg font-semibold tracking-tight text-zinc-900">

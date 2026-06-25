@@ -11,7 +11,14 @@ const sectionTitlesSchema = z
   .optional();
 
 export const singleArticleResponseSchema = z.object({
-  format: z.enum(["story", "brief", "community", "analysis"]),
+  format: z.enum([
+    "story",
+    "brief",
+    "community",
+    "analysis",
+    "essay",
+    "synthesis",
+  ]),
   headline: z.string().min(10),
   seo_title: z.string().min(10).max(70),
   seo_description: z.string().min(50).max(160),
@@ -90,11 +97,17 @@ const META_LEAD_PL = /^(artykuł|w artykule|tematem|najnowszy artykuł)\b/i;
 const MIN_BODY: Record<ArticleFormat, number> = {
   story: 850,
   analysis: 900,
+  essay: 1_000,
+  synthesis: 1_000,
   community: 420,
   brief: 0,
 };
 
 const MIN_HIGHLIGHT_LENGTH = 25;
+
+function hasSubheadings(body: string, minimum = 2): boolean {
+  return (body.match(/^## .+/gm) ?? []).length >= minimum;
+}
 
 export function isGenericContent(text: string, locale: "pl" | "en"): boolean {
   const lower = text.toLowerCase();
@@ -172,15 +185,22 @@ export function normalizeGeneratedArticle(
   }
 
   if (
-    (format === "analysis" || format === "community") &&
+    (format === "analysis" || format === "community" || format === "essay" || format === "synthesis") &&
     (!item.highlights || item.highlights.length < 3)
   ) {
     return null;
   }
 
   if (
-    format === "analysis" &&
+    (format === "analysis" || format === "essay" || format === "synthesis") &&
     item.highlights?.some((h) => h.length < MIN_HIGHLIGHT_LENGTH)
+  ) {
+    return null;
+  }
+
+  if (
+    (format === "essay" || format === "synthesis") &&
+    (!item.body || !hasSubheadings(item.body))
   ) {
     return null;
   }

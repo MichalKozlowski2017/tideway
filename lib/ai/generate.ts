@@ -1,8 +1,15 @@
 import OpenAI from "openai";
 import { formatForSourceType } from "@/lib/ai/article-body";
 import type { ArticleFormat } from "@/lib/ai/article-body";
+import { findSynthesisCluster } from "@/lib/ai/cluster-items";
 import { pickEditorialAngle } from "@/lib/ai/editorial-angle";
-import { buildDigestPrompt, buildSingleArticlePrompt } from "@/lib/ai/prompts";
+import {
+  buildDigestPrompt,
+  buildSingleArticlePrompt,
+  buildSynthesisPrompt,
+  type PromptItem,
+} from "@/lib/ai/prompts";
+import { QUALITY_MIN_SCORE, scoreArticleQuality } from "@/lib/ai/quality-gate";
 import {
   digestResponseSchema,
   normalizeGeneratedArticle,
@@ -180,7 +187,7 @@ function buildBalancedPool(items: PendingItem[]): PendingItem[] {
   return pool;
 }
 
-function selectBatch(items: PendingItem[]): PendingItem[] {
+function selectBatch(items: PendingItem[], maxSize = BATCH_SIZE): PendingItem[] {
   const sorted = sortPendingItems(items);
   const byCategory = new Map<string, PendingItem[]>();
 
@@ -202,27 +209,204 @@ function selectBatch(items: PendingItem[]): PendingItem[] {
     return true;
   };
 
-  for (let i = 0; i < AI_BATCH_SLOTS && batch.length < BATCH_SIZE; i += 1) {
+  for (let i = 0; i < AI_BATCH_SLOTS && batch.length < maxSize; i += 1) {
     if (!byCategory.get("ai")?.length) break;
     takeFrom("ai");
   }
 
   for (const cat of GENERATION_CATEGORIES) {
-    if (batch.length >= BATCH_SIZE) break;
+    if (batch.length >= maxSize) break;
     if (cat === "ai") continue;
     takeFrom(cat);
   }
 
-  while (batch.length < BATCH_SIZE) {
+  while (batch.length < maxSize) {
     let added = false;
     for (const cat of [...GENERATION_CATEGORIES].reverse()) {
-      if (batch.length >= BATCH_SIZE) break;
+      if (batch.length >= maxSize) break;
       if (takeFrom(cat)) added = true;
     }
     if (!added) break;
   }
 
   return batch;
+}
+
+type GenerationWork =
+  | { kind: "synthesis"; items: PendingItem[] }
+  | { kind: "single"; item: PendingItem };
+
+function planGenerationWork(eligible: PendingItem[]): GenerationWork[] {
+  const cluster = findSynthesisCluster(eligible, new Set());
+  const work: GenerationWork[] = [];
+  const reserved = new Set<string>();
+
+  if (cluster) {
+    work.push({ kind: "synthesis", items: cluster });
+    for (const item of cluster) reserved.add(item.id);
+  }
+
+  const singles = selectBatch(
+    eligible.filter((item) => !reserved.has(item.id)),
+    cluster ? BATCH_SIZE - 1 : BATCH_SIZE,
+  );
+
+  for (const item of singles) {
+    work.push({ kind: "single", item });
+  }
+
+  return work;
+}
+
+function toPromptItem(item: PendingItem, description: string): PromptItem {
+  return {
+    title: item.title,
+    description,
+    url: item.url,
+    sourceLabel: buildSourceLabel(item.sources),
+    sourceType: item.sources.type,
+    engagementScore: Number(item.engagement_score),
+  };
+}
+
+async function enrichSourceText(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  rawItem: PendingItem,
+): Promise<string> {
+  let sourceText = rawItem.description ?? "";
+  if (sourceText.length < 200) {
+    const enriched = await enrichDescription({
+      description: sourceText,
+      url: rawItem.url,
+    });
+    if (enriched.length > sourceText.length) {
+      sourceText = enriched;
+      await supabase
+        .from("raw_items")
+        .update({ description: enriched })
+        .eq("id", rawItem.id);
+    }
+  }
+  return sourceText;
+}
+
+async function generateArticleDraft(params: {
+  locale: Locale;
+  category: Category;
+  format: ArticleFormat;
+  buildPrompt: (strictLocale: boolean) => string;
+  fallbackTitle: string;
+  sourceText: string;
+}): Promise<{ article: GeneratedArticle | null; tokensUsed: number }> {
+  let tokensUsed = 0;
+
+  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      console.log(`  retry ${attempt + 1}/${MAX_GENERATION_ATTEMPTS}…`);
+    }
+
+    const { content, tokensUsed: used } = await callOpenAI(
+      params.buildPrompt(attempt > 0),
+    );
+    tokensUsed += used;
+
+    const normalized = normalizeGeneratedArticle(
+      JSON.parse(content),
+      params.fallbackTitle,
+      params.locale,
+      params.format,
+      { sourceText: params.sourceText },
+    );
+
+    if (!normalized) continue;
+
+    const quality = await scoreArticleQuality(
+      normalized,
+      params.sourceText,
+      params.locale,
+    );
+    tokensUsed += quality.tokensUsed;
+
+    if (quality.score >= QUALITY_MIN_SCORE) {
+      if (quality.score < 9) {
+        console.log(`  quality ${quality.score}/10`);
+      }
+      return { article: normalized, tokensUsed };
+    }
+
+    console.log(`  ✗ quality ${quality.score}/10 — ${quality.reason}`);
+  }
+
+  return { article: null, tokensUsed };
+}
+
+async function publishArticle(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  locale: Locale;
+  category: Category;
+  generatedItem: GeneratedArticle;
+  rawItems: PendingItem[];
+  indexNowUrls: string[];
+}): Promise<boolean> {
+  const primary = params.rawItems[0];
+  const baseSlug = slugify(
+    params.generatedItem.slug_hint || primary.title,
+  );
+  const slug = await ensureUniqueSlug(params.locale, baseSlug);
+
+  const imageCandidates = params.rawItems
+    .map((item) => item.image_url)
+    .filter(Boolean);
+  const imageUrl =
+    (await resolveArticleImageUrl({
+      sourceImageUrl: imageCandidates[0],
+      pageUrl: primary.url,
+      category: params.category,
+    })) ?? CATEGORY_FALLBACK_IMAGE[params.category];
+
+  const { error: articleError } = await params.supabase.from("articles").insert({
+    slug,
+    locale: params.locale,
+    category: params.category,
+    article_type: "trend_item",
+    seo_title: params.generatedItem.seo_title,
+    seo_description: params.generatedItem.seo_description,
+    headline: params.generatedItem.headline,
+    lead: params.generatedItem.lead,
+    image_url: imageUrl,
+    summary: {
+      format: params.generatedItem.format,
+      body: params.generatedItem.body,
+      highlights: params.generatedItem.highlights,
+      contextNote: params.generatedItem.context_note,
+      sectionTitles: params.generatedItem.section_titles,
+    },
+    why_it_matters: params.generatedItem.why_it_matters,
+    tags: params.generatedItem.tags,
+    source_item_ids: params.rawItems.map((item) => item.id),
+    is_published: true,
+  });
+
+  if (articleError) {
+    for (const item of params.rawItems) {
+      await params.supabase
+        .from("raw_items")
+        .update({ status: "failed" })
+        .eq("id", item.id);
+    }
+    return false;
+  }
+
+  for (const item of params.rawItems) {
+    await params.supabase
+      .from("raw_items")
+      .update({ status: "processed" })
+      .eq("id", item.id);
+  }
+
+  params.indexNowUrls.push(articlePublicUrl(params.locale, slug));
+  console.log(`  ✓ ${slug}`);
+  return true;
 }
 
 export async function generatePendingArticles(): Promise<{
@@ -275,168 +459,156 @@ export async function generatePendingArticles(): Promise<{
     eligible.push(item);
   }
 
-  const batch = selectBatch(eligible);
+  const work = planGenerationWork(eligible);
 
-  if (!batch.length) {
+  if (!work.length) {
     return { generated: 0, tokensUsed: 0, skippedTrends, skippedDuplicates };
   }
 
-  const aiInBatch = batch.filter((item) => item.sources.category === "ai").length;
+  const aiInBatch = work.filter(
+    (job) =>
+      job.kind === "single"
+        ? job.item.sources.category === "ai"
+        : job.items[0]?.sources.category === "ai",
+  ).length;
   console.log(
-    `Batch: ${batch.length} artykułów (AI: ${aiInBatch}, pula: ${pool.length}, eligible: ${eligible.length}, duplikaty: ${skippedDuplicates})…`,
+    `Batch: ${work.length} zadań (AI: ${aiInBatch}, syntezy: ${work.filter((j) => j.kind === "synthesis").length}, pula: ${pool.length}, eligible: ${eligible.length})…`,
   );
-
-  const grouped = new Map<string, PendingItem[]>();
-
-  for (const item of batch) {
-    const key = `${item.sources.locale}:${item.sources.category}`;
-    const list = grouped.get(key) ?? [];
-    list.push(item);
-    grouped.set(key, list);
-  }
 
   let generated = 0;
   let tokensUsed = 0;
   const indexNowUrls: string[] = [];
 
-  for (const [key, groupItems] of grouped) {
-    const [locale, category] = key.split(":") as [Locale, Category];
+  for (const job of work) {
+    if (job.kind === "synthesis") {
+      const rawItems = job.items;
+      const locale = rawItems[0].sources.locale as Locale;
+      const category = rawItems[0].sources.category as Category;
+      const articleFormat: ArticleFormat = "synthesis";
 
-    for (const rawItem of groupItems) {
-      const articleFormat = formatForSourceType(
-        rawItem.sources.type,
-        rawItem.sources.category,
+      const enriched = await Promise.all(
+        rawItems.map(async (item) => ({
+          item,
+          text: await enrichSourceText(supabase, item),
+        })),
       );
-      let generatedItem: GeneratedArticle | null = null;
-      let attemptTokens = 0;
-
-      let sourceText = rawItem.description ?? "";
-      if (sourceText.length < 200) {
-        const enriched = await enrichDescription({
-          description: sourceText,
-          url: rawItem.url,
-        });
-        if (enriched.length > sourceText.length) {
-          sourceText = enriched;
-          await supabase
-            .from("raw_items")
-            .update({ description: enriched })
-            .eq("id", rawItem.id);
-        }
-      }
-
+      const sourceText = enriched.map((entry) => entry.text).join("\n\n---\n\n");
       const angle = pickEditorialAngle(
         category,
         articleFormat,
-        rawItem.id,
+        rawItems.map((item) => item.id).join(":"),
         sourceText.length,
       );
 
       console.log(
-        `→ ${rawItem.title.slice(0, 70)}… [${articleFormat}${angle ? `, ${angle}` : ""}, ${rawItem.sources.type}, ${sourceText.length}ch]`,
+        `→ [synthesis ×${rawItems.length}] ${rawItems[0].title.slice(0, 50)}… [${angle ?? "context"}, ${sourceText.length}ch]`,
       );
 
-      for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
-        if (attempt > 0) {
-          console.log(`  retry ${attempt + 1}/${MAX_GENERATION_ATTEMPTS}…`);
-        }
-        const prompt = buildSingleArticlePrompt(
+      const { article: generatedItem, tokensUsed: used } =
+        await generateArticleDraft({
           locale,
           category,
-          {
-            title: rawItem.title,
-            description: sourceText,
-            url: rawItem.url,
-            sourceLabel: buildSourceLabel(rawItem.sources),
-            sourceType: rawItem.sources.type,
-            engagementScore: Number(rawItem.engagement_score),
-          },
-          articleFormat,
-          { strictLocale: attempt > 0, angle },
-        );
-
-        const { content, tokensUsed: used } = await callOpenAI(prompt);
-        attemptTokens += used;
-
-        const normalized = normalizeGeneratedArticle(
-          JSON.parse(content),
-          rawItem.title,
-          locale,
-          articleFormat,
-          { sourceText },
-        );
-
-        if (normalized) {
-          generatedItem = normalized;
-          break;
-        }
-      }
-
-      tokensUsed += attemptTokens;
+          format: articleFormat,
+          buildPrompt: (strictLocale) =>
+            buildSynthesisPrompt(
+              locale,
+              category,
+              enriched.map((entry) => toPromptItem(entry.item, entry.text)),
+              { angle, strictLocale },
+            ),
+          fallbackTitle: rawItems[0].title,
+          sourceText,
+        });
+      tokensUsed += used;
 
       if (!generatedItem) {
-        const skip = shouldSkipAfterGenerationFailure(rawItem.title, locale);
-        console.log(
-          skip
-            ? "  ✗ pominięto (źródło EN, walidacja PL)"
-            : "  ✗ odrzucono (walidacja lub API)",
-        );
-        await supabase
-          .from("raw_items")
-          .update({ status: skip ? "skipped" : "failed" })
-          .eq("id", rawItem.id);
+        console.log("  ✗ odrzucono syntezę (walidacja lub jakość)");
+        for (const item of rawItems) {
+          await supabase
+            .from("raw_items")
+            .update({ status: "failed" })
+            .eq("id", item.id);
+        }
         continue;
       }
 
-      const baseSlug = slugify(generatedItem.slug_hint || rawItem.title);
-      const slug = await ensureUniqueSlug(locale, baseSlug);
-
-      const imageUrl =
-        (await resolveArticleImageUrl({
-          sourceImageUrl: rawItem.image_url,
-          pageUrl: rawItem.url,
+      if (
+        await publishArticle({
+          supabase,
+          locale,
           category,
-        })) ?? CATEGORY_FALLBACK_IMAGE[category];
+          generatedItem,
+          rawItems,
+          indexNowUrls,
+        })
+      ) {
+        generated += 1;
+      }
+      continue;
+    }
 
-      const { error: articleError } = await supabase.from("articles").insert({
-        slug,
+    const rawItem = job.item;
+    const locale = rawItem.sources.locale as Locale;
+    const category = rawItem.sources.category as Category;
+    const articleFormat = formatForSourceType(
+      rawItem.sources.type,
+      rawItem.sources.category,
+    );
+    const sourceText = await enrichSourceText(supabase, rawItem);
+    const angle = pickEditorialAngle(
+      category,
+      articleFormat,
+      rawItem.id,
+      sourceText.length,
+    );
+
+    console.log(
+      `→ ${rawItem.title.slice(0, 70)}… [${articleFormat}${angle ? `, ${angle}` : ""}, ${rawItem.sources.type}, ${sourceText.length}ch]`,
+    );
+
+    const { article: generatedItem, tokensUsed: used } =
+      await generateArticleDraft({
         locale,
         category,
-        article_type: "trend_item",
-        seo_title: generatedItem.seo_title,
-        seo_description: generatedItem.seo_description,
-        headline: generatedItem.headline,
-        lead: generatedItem.lead,
-        image_url: imageUrl,
-        summary: {
-          format: generatedItem.format,
-          body: generatedItem.body,
-          highlights: generatedItem.highlights,
-          contextNote: generatedItem.context_note,
-          sectionTitles: generatedItem.section_titles,
-        },
-        why_it_matters: generatedItem.why_it_matters,
-        tags: generatedItem.tags,
-        source_item_ids: [rawItem.id],
-        is_published: true,
+        format: articleFormat,
+        buildPrompt: (strictLocale) =>
+          buildSingleArticlePrompt(
+            locale,
+            category,
+            toPromptItem(rawItem, sourceText),
+            articleFormat,
+            { angle, strictLocale },
+          ),
+        fallbackTitle: rawItem.title,
+        sourceText,
       });
+    tokensUsed += used;
 
-      if (articleError) {
-        await supabase
-          .from("raw_items")
-          .update({ status: "failed" })
-          .eq("id", rawItem.id);
-        continue;
-      }
-
+    if (!generatedItem) {
+      const skip = shouldSkipAfterGenerationFailure(rawItem.title, locale);
+      console.log(
+        skip
+          ? "  ✗ pominięto (źródło EN, walidacja PL)"
+          : "  ✗ odrzucono (walidacja, jakość lub API)",
+      );
       await supabase
         .from("raw_items")
-        .update({ status: "processed" })
+        .update({ status: skip ? "skipped" : "failed" })
         .eq("id", rawItem.id);
+      continue;
+    }
 
+    if (
+      await publishArticle({
+        supabase,
+        locale,
+        category,
+        generatedItem,
+        rawItems: [rawItem],
+        indexNowUrls,
+      })
+    ) {
       generated += 1;
-      indexNowUrls.push(articlePublicUrl(locale, slug));
-      console.log(`  ✓ ${slug}`);
     }
   }
 
