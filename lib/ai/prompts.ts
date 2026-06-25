@@ -43,12 +43,12 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - section_titles.impact: e.g. "Efekt domina" — NOT "Kluczowe punkty analizy"`,
   essay: `Format "essay":
 - lead: compelling hook with a clear thesis — not a dry news summary
-- body: long-form essay, min 1000 chars; use 3–4 sections; each section starts with "## Section title" on its own line, then 1–2 paragraphs; final section MUST be "## Co to znaczy dla Ciebie" (PL) or "## What this means for you" (EN)
+- body: long-form essay, min 1000 chars; use 3–4 sections; each section is: one line "## Short section title" (title only, max ~8 words), then a blank line, then 1–2 paragraphs; final section title MUST be "## Co to znaczy dla Ciebie" (PL) or "## What this means for you" (EN)
 - highlights: 3 concise takeaways
 - section_titles.impact: creative closing-frame heading`,
   synthesis: `Format "synthesis":
 - lead: one sentence capturing the combined story across ALL sources
-- body: min 1000 chars; weave facts from every source; use "##" section headings; note where sources agree or differ; do not favor one source silently
+- body: min 1000 chars; weave facts from every source; each section: "## Short title" on its own line, blank line, then paragraphs; note where sources agree or differ
 - highlights: 3 bullets — each tied to a specific source fact
 - section_titles.highlights: e.g. "W pigułce ze źródeł"
 - section_titles.impact: e.g. "Synteza"`,

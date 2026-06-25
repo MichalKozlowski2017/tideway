@@ -21,6 +21,15 @@ export type BodyBlock =
   | { type: "heading"; text: string }
   | { type: "paragraph"; text: string };
 
+const MAX_HEADING_LENGTH = 100;
+
+function looksLikeHeading(text: string): boolean {
+  if (!text || text.length > MAX_HEADING_LENGTH) return false;
+  // Titles rarely end with sentence punctuation mid-text.
+  if (/[.!?]["']?\s/.test(text)) return false;
+  return true;
+}
+
 export function parseBodyBlocks(body: string): BodyBlock[] {
   const blocks: BodyBlock[] = [];
 
@@ -28,11 +37,35 @@ export function parseBodyBlocks(body: string): BodyBlock[] {
     const trimmed = chunk.trim();
     if (!trimmed) continue;
 
-    if (trimmed.startsWith("## ")) {
-      blocks.push({ type: "heading", text: trimmed.slice(3).trim() });
-    } else {
-      blocks.push({ type: "paragraph", text: trimmed });
+    const lines = trimmed.split(/\n/);
+    const firstLine = lines[0]?.trim() ?? "";
+
+    if (firstLine.startsWith("## ")) {
+      const headingText = firstLine.slice(3).trim();
+      const rest = lines.slice(1).join("\n").trim();
+
+      if (rest) {
+        if (looksLikeHeading(headingText)) {
+          blocks.push({ type: "heading", text: headingText });
+          blocks.push({ type: "paragraph", text: rest });
+        } else {
+          blocks.push({
+            type: "paragraph",
+            text: [headingText, rest].filter(Boolean).join("\n\n"),
+          });
+        }
+        continue;
+      }
+
+      if (looksLikeHeading(headingText)) {
+        blocks.push({ type: "heading", text: headingText });
+      } else {
+        blocks.push({ type: "paragraph", text: headingText });
+      }
+      continue;
     }
+
+    blocks.push({ type: "paragraph", text: trimmed });
   }
 
   return blocks;
