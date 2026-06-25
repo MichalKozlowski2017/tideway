@@ -234,22 +234,53 @@ function selectBatch(items: PendingItem[], maxSize = BATCH_SIZE): PendingItem[] 
 
 type GenerationWork =
   | { kind: "synthesis"; items: PendingItem[] }
-  | { kind: "single"; item: PendingItem };
+  | { kind: "single"; item: PendingItem; format?: ArticleFormat };
+
+function isRssLongReadCandidate(item: PendingItem): boolean {
+  return item.sources.type === "rss";
+}
+
+function pickGuaranteedLongReadFormat(item: PendingItem): ArticleFormat {
+  const n = item.id.charCodeAt(0) + item.id.charCodeAt(item.id.length - 1);
+  return n % 2 === 0 ? "essay" : "analysis";
+}
 
 function planGenerationWork(eligible: PendingItem[]): GenerationWork[] {
-  const cluster = findSynthesisCluster(eligible, new Set());
-  const work: GenerationWork[] = [];
   const reserved = new Set<string>();
+  const work: GenerationWork[] = [];
 
+  const cluster = findSynthesisCluster(eligible, reserved);
   if (cluster) {
     work.push({ kind: "synthesis", items: cluster });
     for (const item of cluster) reserved.add(item.id);
   }
 
+  const maxSingles = cluster ? BATCH_SIZE - 1 : BATCH_SIZE;
+  const remaining = eligible.filter((item) => !reserved.has(item.id));
+
+  let longReadItem: PendingItem | null = null;
+  if (!cluster) {
+    const rssCandidates = sortPendingItems(
+      remaining.filter(isRssLongReadCandidate),
+    );
+    if (rssCandidates.length > 0) {
+      longReadItem = rssCandidates[0]!;
+      reserved.add(longReadItem.id);
+    }
+  }
+
   const singles = selectBatch(
-    eligible.filter((item) => !reserved.has(item.id)),
-    cluster ? BATCH_SIZE - 1 : BATCH_SIZE,
+    remaining.filter((item) => !reserved.has(item.id)),
+    longReadItem ? maxSingles - 1 : maxSingles,
   );
+
+  if (longReadItem) {
+    work.push({
+      kind: "single",
+      item: longReadItem,
+      format: pickGuaranteedLongReadFormat(longReadItem),
+    });
+  }
 
   for (const item of singles) {
     work.push({ kind: "single", item });
@@ -409,6 +440,80 @@ async function publishArticle(params: {
   return true;
 }
 
+function workItemIds(work: GenerationWork[]): Set<string> {
+  const ids = new Set<string>();
+  for (const job of work) {
+    if (job.kind === "synthesis") {
+      for (const item of job.items) ids.add(item.id);
+    } else {
+      ids.add(job.item.id);
+    }
+  }
+  return ids;
+}
+
+async function generateAndPublishSingle(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  rawItem: PendingItem;
+  articleFormat: ArticleFormat;
+  indexNowUrls: string[];
+}): Promise<{ published: boolean; tokensUsed: number }> {
+  const locale = params.rawItem.sources.locale as Locale;
+  const category = params.rawItem.sources.category as Category;
+  const sourceText = await enrichSourceText(params.supabase, params.rawItem);
+  const angle = pickEditorialAngle(
+    category,
+    params.articleFormat,
+    params.rawItem.id,
+    sourceText.length,
+  );
+
+  console.log(
+    `→ ${params.rawItem.title.slice(0, 70)}… [${params.articleFormat}${angle ? `, ${angle}` : ""}, ${params.rawItem.sources.type}, ${sourceText.length}ch]`,
+  );
+
+  const { article: generatedItem, tokensUsed } = await generateArticleDraft({
+    locale,
+    category,
+    format: params.articleFormat,
+    buildPrompt: (strictLocale) =>
+      buildSingleArticlePrompt(
+        locale,
+        category,
+        toPromptItem(params.rawItem, sourceText),
+        params.articleFormat,
+        { angle, strictLocale },
+      ),
+    fallbackTitle: params.rawItem.title,
+    sourceText,
+  });
+
+  if (!generatedItem) {
+    const skip = shouldSkipAfterGenerationFailure(params.rawItem.title, locale);
+    console.log(
+      skip
+        ? "  ✗ pominięto (źródło EN, walidacja PL)"
+        : "  ✗ odrzucono (walidacja, jakość lub API)",
+    );
+    await params.supabase
+      .from("raw_items")
+      .update({ status: skip ? "skipped" : "failed" })
+      .eq("id", params.rawItem.id);
+    return { published: false, tokensUsed };
+  }
+
+  const published = await publishArticle({
+    supabase: params.supabase,
+    locale,
+    category,
+    generatedItem,
+    rawItems: [params.rawItem],
+    indexNowUrls: params.indexNowUrls,
+  });
+
+  return { published, tokensUsed };
+}
+
 export async function generatePendingArticles(): Promise<{
   generated: number;
   tokensUsed: number;
@@ -471,12 +576,18 @@ export async function generatePendingArticles(): Promise<{
         ? job.item.sources.category === "ai"
         : job.items[0]?.sources.category === "ai",
   ).length;
+  const longReadSlots = work.filter(
+    (job) =>
+      job.kind === "synthesis" ||
+      (job.kind === "single" && job.format !== undefined),
+  ).length;
   console.log(
-    `Batch: ${work.length} zadań (AI: ${aiInBatch}, syntezy: ${work.filter((j) => j.kind === "synthesis").length}, pula: ${pool.length}, eligible: ${eligible.length})…`,
+    `Batch: ${work.length} zadań (AI: ${aiInBatch}, długie: ${longReadSlots}, syntezy: ${work.filter((j) => j.kind === "synthesis").length}, pula: ${pool.length}, eligible: ${eligible.length})…`,
   );
 
   let generated = 0;
   let tokensUsed = 0;
+  let longReadPublished = false;
   const indexNowUrls: string[] = [];
 
   for (const job of work) {
@@ -543,72 +654,52 @@ export async function generatePendingArticles(): Promise<{
         })
       ) {
         generated += 1;
+        longReadPublished = true;
       }
       continue;
     }
 
-    const rawItem = job.item;
-    const locale = rawItem.sources.locale as Locale;
-    const category = rawItem.sources.category as Category;
-    const articleFormat = formatForSourceType(
-      rawItem.sources.type,
-      rawItem.sources.category,
-    );
-    const sourceText = await enrichSourceText(supabase, rawItem);
-    const angle = pickEditorialAngle(
-      category,
+    const articleFormat =
+      job.format ??
+      formatForSourceType(job.item.sources.type, job.item.sources.category);
+    const { published, tokensUsed: used } = await generateAndPublishSingle({
+      supabase,
+      rawItem: job.item,
       articleFormat,
-      rawItem.id,
-      sourceText.length,
-    );
-
-    console.log(
-      `→ ${rawItem.title.slice(0, 70)}… [${articleFormat}${angle ? `, ${angle}` : ""}, ${rawItem.sources.type}, ${sourceText.length}ch]`,
-    );
-
-    const { article: generatedItem, tokensUsed: used } =
-      await generateArticleDraft({
-        locale,
-        category,
-        format: articleFormat,
-        buildPrompt: (strictLocale) =>
-          buildSingleArticlePrompt(
-            locale,
-            category,
-            toPromptItem(rawItem, sourceText),
-            articleFormat,
-            { angle, strictLocale },
-          ),
-        fallbackTitle: rawItem.title,
-        sourceText,
-      });
+      indexNowUrls,
+    });
     tokensUsed += used;
 
-    if (!generatedItem) {
-      const skip = shouldSkipAfterGenerationFailure(rawItem.title, locale);
-      console.log(
-        skip
-          ? "  ✗ pominięto (źródło EN, walidacja PL)"
-          : "  ✗ odrzucono (walidacja, jakość lub API)",
-      );
-      await supabase
-        .from("raw_items")
-        .update({ status: skip ? "skipped" : "failed" })
-        .eq("id", rawItem.id);
-      continue;
-    }
-
-    if (
-      await publishArticle({
-        supabase,
-        locale,
-        category,
-        generatedItem,
-        rawItems: [rawItem],
-        indexNowUrls,
-      })
-    ) {
+    if (published) {
       generated += 1;
+      if (job.format) longReadPublished = true;
+    }
+  }
+
+  const hadLongReadSlot = work.some(
+    (job) =>
+      job.kind === "synthesis" ||
+      (job.kind === "single" && job.format !== undefined),
+  );
+
+  if (!longReadPublished && hadLongReadSlot) {
+    const exclude = workItemIds(work);
+    const backup = sortPendingItems(
+      eligible.filter(
+        (item) => isRssLongReadCandidate(item) && !exclude.has(item.id),
+      ),
+    )[0];
+
+    if (backup) {
+      console.log("↻ backup długi materiał…");
+      const { published, tokensUsed: used } = await generateAndPublishSingle({
+        supabase,
+        rawItem: backup,
+        articleFormat: pickGuaranteedLongReadFormat(backup),
+        indexNowUrls,
+      });
+      tokensUsed += used;
+      if (published) generated += 1;
     }
   }
 
