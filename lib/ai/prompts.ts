@@ -17,8 +17,8 @@ export type PromptOptions = {
 
 const FORMAT_GUIDE: Record<ArticleFormat, string> = {
   story: `Format "story":
-- lead: vivid opening with the main fact in first sentence (min 80 chars)
-- body: 3 paragraphs (separated by blank lines), journalistic prose — min 500 chars total, NO bullet list in body
+- lead: vivid opening with the main fact in first sentence
+- body: 4–5 paragraphs (separated by blank lines), journalistic prose — min 900 chars total, NO bullet list in body; include names, dates, numbers, and concrete context from Input
 - highlights: omit or max 2 short lines
 - section_titles.impact: creative heading (NOT "Dlaczego to ważne?" / "Potencjalne konsekwencje") e.g. "Co to zmienia na rynku"`,
   brief: `Format "brief":
@@ -29,13 +29,13 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
   community: `Format "community":
 - lead: start with the TOPIC or linked story — NOT "Społeczność dyskutuje" / "Artykuł omawia" / "The community is discussing"
 - context_note: why this link is trending (score, comment count) — use ONLY facts from Input
-- body: 2 paragraphs explaining the linked story — min 350 chars total
-- highlights: 3 concrete takeaways from the source material
+- body: 3 paragraphs explaining the linked story — min 450 chars total, grounded in Input
+- highlights: 3 concrete takeaways from the source material (each with a specific fact)
 - section_titles.highlights: e.g. "Dlaczego to trafia na listę"`,
   analysis: `Format "analysis":
-- lead: specific thesis with names and facts — NOT "The real story behind..." (min 60 chars)
-- body: 3 paragraphs of context and implications — min 500 chars total, grounded in Input details
-- highlights: 3 analytical points (cause, effect, who wins/loses) with specifics
+- lead: specific thesis with names and facts — NOT "The real story behind..."
+- body: 4–5 paragraphs of context and implications — min 900 chars total, grounded in Input details; explain cause, effect, and who is affected
+- highlights: 3 analytical points (cause, effect, who wins/loses) — each min 25 chars with specifics
 - section_titles.impact: e.g. "Efekt domina" — NOT "Kluczowe punkty analizy"`,
 };
 
@@ -78,7 +78,7 @@ Return ONLY valid JSON:
   "highlights": ["optional bullet items for brief/analysis/community"],
   "context_note": "required for community format",
   "section_titles": { "highlights": "custom section heading", "impact": "custom impact heading" },
-  "why_it_matters": "2 specific sentences — WHO is affected, WHAT changes — name companies, products, or user groups",
+  "why_it_matters": "2–3 specific sentences — WHO is affected, WHAT changes, WHEN it matters — name companies, products, or user groups",
   "tags": ["5 tags"],
   "slug_hint": "url-slug"
 }

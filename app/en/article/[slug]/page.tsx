@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArticleView } from "@/components/article-view";
 import { SiteHeader } from "@/components/site-header";
 import { buildArticleMetadata } from "@/lib/seo/article-metadata";
-import { articleJsonLd } from "@/lib/seo/json-ld";
+import { articlePageJsonLd } from "@/lib/seo/json-ld";
 import { resolveDigestItems } from "@/lib/digest/resolve";
 import { getArticleBySlug, getRelatedArticles } from "@/lib/db/queries";
 import { getSourceItemsForArticle } from "@/lib/sources/ingest";
@@ -33,13 +33,16 @@ export default async function EnArticlePage({ params }: Props) {
   ]);
 
   const url = `${siteUrl()}${articlePath("en", slug)}`;
+  const sourceUrls = sources.map((s) => s.url);
 
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(articleJsonLd(article, url)),
+          __html: JSON.stringify(
+            articlePageJsonLd(article, url, "en", { sourceUrls }),
+          ),
         }}
       />
       <SiteHeader locale="en" />

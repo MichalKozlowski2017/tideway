@@ -2,19 +2,30 @@ import type { Category } from "@/lib/types";
 import { fetchOgImage } from "@/lib/sources/og-image";
 import { isValidImageUrl } from "@/lib/sources/extract-image";
 
+function isStockFallback(url: string): boolean {
+  return url.includes("images.unsplash.com");
+}
+
 export async function resolveArticleImageUrl(params: {
   sourceImageUrl?: string | null;
   pageUrl: string;
   fetchOg?: boolean;
   category?: Category;
 }): Promise<string | null> {
-  if (isValidImageUrl(params.sourceImageUrl)) {
+  if (
+    isValidImageUrl(params.sourceImageUrl) &&
+    !isStockFallback(params.sourceImageUrl.trim())
+  ) {
     return params.sourceImageUrl.trim();
   }
 
   if (params.fetchOg !== false) {
     const og = await fetchOgImage(params.pageUrl);
     if (isValidImageUrl(og)) return og;
+  }
+
+  if (isValidImageUrl(params.sourceImageUrl)) {
+    return params.sourceImageUrl.trim();
   }
 
   if (params.category) {

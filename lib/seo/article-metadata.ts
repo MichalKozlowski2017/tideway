@@ -14,7 +14,7 @@ export function buildArticleMetadata(
     : undefined;
 
   return {
-    title: article.seo_title,
+    title: { absolute: article.seo_title },
     description: article.seo_description,
     keywords: article.tags,
     alternates: {
@@ -24,7 +24,7 @@ export function buildArticleMetadata(
       type: "article",
       locale: locale === "pl" ? "pl_PL" : "en_US",
       url,
-      title: article.headline,
+      title: article.seo_title,
       description: article.seo_description,
       siteName: SITE_NAME,
       publishedTime: article.published_at,
@@ -34,7 +34,7 @@ export function buildArticleMetadata(
     },
     twitter: {
       card: images ? "summary_large_image" : "summary",
-      title: article.headline,
+      title: article.seo_title,
       description: article.seo_description,
       images: article.image_url ? [article.image_url] : undefined,
     },

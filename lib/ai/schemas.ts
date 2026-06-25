@@ -87,11 +87,13 @@ const COMMUNITY_LEAD_EN =
 const META_LEAD_PL = /^(artykuł|w artykule|tematem|najnowszy artykuł)\b/i;
 
 const MIN_BODY: Record<ArticleFormat, number> = {
-  story: 450,
-  analysis: 500,
-  community: 300,
+  story: 850,
+  analysis: 900,
+  community: 420,
   brief: 0,
 };
+
+const MIN_HIGHLIGHT_LENGTH = 25;
 
 export function isGenericContent(text: string, locale: "pl" | "en"): boolean {
   const lower = text.toLowerCase();
@@ -174,6 +176,13 @@ export function normalizeGeneratedArticle(
     return null;
   }
 
+  if (
+    format === "analysis" &&
+    item.highlights?.some((h) => h.length < MIN_HIGHLIGHT_LENGTH)
+  ) {
+    return null;
+  }
+
   if (format === "community" && !item.context_note) {
     return null;
   }
@@ -191,9 +200,9 @@ const digestBulletSchema = z.object({
 });
 
 export const digestResponseSchema = z.object({
-  headline: z.string(),
-  seo_title: z.string(),
-  seo_description: z.string(),
+  headline: z.string().min(10),
+  seo_title: z.string().min(10).max(70),
+  seo_description: z.string().min(50).max(160),
   lead: z.string(),
   bullet_points: z.array(digestBulletSchema).min(5).max(10),
   why_it_matters: z.string(),

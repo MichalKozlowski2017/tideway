@@ -21,12 +21,12 @@ import { articlePublicUrl, notifyIndexNow } from "@/lib/seo/indexnow";
 import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
-const BATCH_SIZE = 8;
+const BATCH_SIZE = 4;
 const PENDING_POOL_SIZE = 250;
 const PENDING_FETCH_SIZE = 500;
 const AI_POOL_MIN = 50;
 const CATEGORY_POOL_MIN = 30;
-const AI_BATCH_SLOTS = 3;
+const AI_BATCH_SLOTS = 2;
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -48,7 +48,7 @@ async function callOpenAI(
     model: MODEL,
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
-    temperature: 0.75,
+    temperature: 0.65,
   });
 
   const content = response.choices[0]?.message?.content;

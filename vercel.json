@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/generate",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/daily-rollup",

@@ -68,7 +68,10 @@ export function ArticleView({
 
       <header className="mt-10 border-b border-zinc-200/80 pb-10">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <time className="text-zinc-400">
+          <time
+            className="text-zinc-400"
+            dateTime={article.published_at}
+          >
             {new Date(article.published_at).toLocaleString(
               locale === "pl" ? "pl-PL" : "en-US",
             )}

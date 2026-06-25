@@ -43,7 +43,7 @@ export function formatForSourceType(
       return "community";
     case "rss": {
       const roll = Math.random();
-      if (roll < 0.55) return "story";
+      if (roll < 0.4) return "story";
       return "analysis";
     }
     default:
