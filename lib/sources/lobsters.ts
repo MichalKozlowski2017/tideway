@@ -32,7 +32,7 @@ export async function fetchLobstersItems(
     const description = [
       "Source: Lobsters",
       item.creator ? `Author: ${item.creator}` : null,
-      item.contentSnippet ? `Summary: ${item.contentSnippet.slice(0, 800)}` : null,
+      item.contentSnippet ? `Summary: ${item.contentSnippet.slice(0, 1200)}` : null,
     ]
       .filter(Boolean)
       .join("\n");

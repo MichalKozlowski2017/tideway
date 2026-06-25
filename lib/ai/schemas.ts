@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ArticleFormat } from "@/lib/ai/article-body";
+import { claimsSupportedBySource } from "@/lib/ai/fact-check";
 import { articleMatchesLocale } from "@/lib/ai/locale-check";
 
 const sectionTitlesSchema = z
@@ -127,6 +128,7 @@ export function normalizeGeneratedArticle(
   fallbackTitle: string,
   locale: "pl" | "en" = "pl",
   expectedFormat?: ArticleFormat,
+  options?: { sourceText?: string },
 ): GeneratedArticle | null {
   const parsed = singleArticleResponseSchema.safeParse(raw);
   if (!parsed.success) return null;
@@ -184,6 +186,13 @@ export function normalizeGeneratedArticle(
   }
 
   if (format === "community" && !item.context_note) {
+    return null;
+  }
+
+  if (
+    options?.sourceText &&
+    !claimsSupportedBySource(item, options.sourceText)
+  ) {
     return null;
   }
 

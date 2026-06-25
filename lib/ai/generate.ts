@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { formatForSourceType } from "@/lib/ai/article-body";
 import type { ArticleFormat } from "@/lib/ai/article-body";
+import { pickEditorialAngle } from "@/lib/ai/editorial-angle";
 import { buildDigestPrompt, buildSingleArticlePrompt } from "@/lib/ai/prompts";
 import {
   digestResponseSchema,
@@ -19,14 +20,15 @@ import { GENERATION_CATEGORIES } from "@/lib/types";
 import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
 import { articlePublicUrl, notifyIndexNow } from "@/lib/seo/indexnow";
 import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
+import { enrichDescription } from "@/lib/sources/enrich-description";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
-const BATCH_SIZE = 4;
+const BATCH_SIZE = 3;
 const PENDING_POOL_SIZE = 250;
 const PENDING_FETCH_SIZE = 500;
 const AI_POOL_MIN = 50;
 const CATEGORY_POOL_MIN = 30;
-const AI_BATCH_SLOTS = 2;
+const AI_BATCH_SLOTS = 1;
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -308,8 +310,30 @@ export async function generatePendingArticles(): Promise<{
       let generatedItem: GeneratedArticle | null = null;
       let attemptTokens = 0;
 
+      let sourceText = rawItem.description ?? "";
+      if (sourceText.length < 200) {
+        const enriched = await enrichDescription({
+          description: sourceText,
+          url: rawItem.url,
+        });
+        if (enriched.length > sourceText.length) {
+          sourceText = enriched;
+          await supabase
+            .from("raw_items")
+            .update({ description: enriched })
+            .eq("id", rawItem.id);
+        }
+      }
+
+      const angle = pickEditorialAngle(
+        category,
+        articleFormat,
+        rawItem.id,
+        sourceText.length,
+      );
+
       console.log(
-        `→ ${rawItem.title.slice(0, 70)}… [${articleFormat}, ${rawItem.sources.type}]`,
+        `→ ${rawItem.title.slice(0, 70)}… [${articleFormat}${angle ? `, ${angle}` : ""}, ${rawItem.sources.type}, ${sourceText.length}ch]`,
       );
 
       for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
@@ -321,14 +345,14 @@ export async function generatePendingArticles(): Promise<{
           category,
           {
             title: rawItem.title,
-            description: rawItem.description ?? "",
+            description: sourceText,
             url: rawItem.url,
             sourceLabel: buildSourceLabel(rawItem.sources),
             sourceType: rawItem.sources.type,
             engagementScore: Number(rawItem.engagement_score),
           },
           articleFormat,
-          { strictLocale: attempt > 0 },
+          { strictLocale: attempt > 0, angle },
         );
 
         const { content, tokensUsed: used } = await callOpenAI(prompt);
@@ -339,6 +363,7 @@ export async function generatePendingArticles(): Promise<{
           rawItem.title,
           locale,
           articleFormat,
+          { sourceText },
         );
 
         if (normalized) {

@@ -9,6 +9,7 @@ import type { NormalizedItem, Source } from "@/lib/types";
 import { contentHash } from "@/lib/utils/hash";
 import { buildSourceLabel } from "@/lib/sources/source-label";
 import { enrichItemImageUrl } from "@/lib/sources/enrich-image";
+import { enrichDescription } from "@/lib/sources/enrich-description";
 
 async function fetchFromSource(source: Source): Promise<NormalizedItem[]> {
   switch (source.type) {
@@ -72,12 +73,13 @@ export async function ingestAllSources(): Promise<{
 
       const imageUrl =
         (await enrichItemImageUrl(item)) ?? item.imageUrl ?? null;
+      const description = await enrichDescription(item);
 
       const { error: insertError } = await supabase.from("raw_items").insert({
         source_id: source.id,
         external_id: item.externalId,
         title: item.title,
-        description: item.description,
+        description,
         url: item.url,
         image_url: imageUrl,
         engagement_score: item.engagementScore,

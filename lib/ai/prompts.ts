@@ -1,4 +1,6 @@
 import type { ArticleFormat } from "@/lib/ai/article-body";
+import type { EditorialAngle } from "@/lib/ai/editorial-angle";
+import { getEditorialAngleGuide } from "@/lib/ai/editorial-angle";
 import { matchesLocale } from "@/lib/ai/locale-check";
 import type { Locale } from "@/lib/types";
 
@@ -13,6 +15,7 @@ export type PromptItem = {
 
 export type PromptOptions = {
   strictLocale?: boolean;
+  angle?: EditorialAngle;
 };
 
 const FORMAT_GUIDE: Record<ArticleFormat, string> = {
@@ -56,16 +59,24 @@ export function buildSingleArticlePrompt(
       ? "\nSource material may be in English — translate and write the full article in Polish only.\n"
       : "";
 
+  const angleBlock = options.angle
+    ? `\nEditorial angle: "${options.angle}"
+${getEditorialAngleGuide(options.angle)}
+Shape structure and emphasis around this angle. Do not invent facts not present in Details.\n`
+    : "";
+
   return `You are a ${lang} editor at a tech publication. Write ONE unique article — NOT a template.
 ${sourceNote}
 ${langRule}
-
+${angleBlock}
 Category: ${category}
 Source: ${item.sourceLabel} (${item.sourceType})
 Engagement: ${item.engagementScore}
 Required format: "${format}"
 
 ${FORMAT_GUIDE[format]}
+
+Fact rule: Use ONLY facts present in Details below. Do not invent numbers, dates, company names, or quotes.
 
 Return ONLY valid JSON:
 {
