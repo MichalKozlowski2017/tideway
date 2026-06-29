@@ -1,6 +1,7 @@
 import type { Article, Locale } from "@/lib/types";
 import type { DigestItem } from "@/lib/digest/items";
-import { isLongReadFormat, parseArticleBody, parseBodyBlocks } from "@/lib/ai/article-body";
+import { isLongReadFormat, parseArticleBody } from "@/lib/ai/article-body";
+import { ArticleBodyContent } from "@/components/article-body-content";
 import { estimateReadTimeMinutes, formatReadTime } from "@/lib/ai/read-time";
 import Link from "next/link";
 import { articlePath, ui } from "@/lib/i18n/config";
@@ -20,34 +21,7 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   guide: { pl: "Poradnik", en: "Guide" },
 };
 
-function ArticleBodyContent({ body, longRead }: { body: string; longRead: boolean }) {
-  const blocks = parseBodyBlocks(body);
-
-  return (
-    <div
-      className={
-        longRead
-          ? "space-y-6 text-[1.125rem] leading-[1.85] text-zinc-700"
-          : "space-y-5 text-[1.0625rem] leading-[1.75] text-zinc-700"
-      }
-    >
-      {blocks.map((block) =>
-        block.type === "heading" ? (
-          <h2
-            key={`${block.type}-${block.text}`}
-            className="pt-2 text-xl font-semibold tracking-tight text-zinc-900"
-          >
-            {block.text}
-          </h2>
-        ) : (
-          <p key={`${block.type}-${block.text.slice(0, 48)}`}>{block.text}</p>
-        ),
-      )}
-    </div>
-  );
-}
-
-export function ArticleView({
+export async function ArticleView({
   article,
   locale,
   sources,

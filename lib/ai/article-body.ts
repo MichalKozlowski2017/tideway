@@ -26,7 +26,10 @@ export interface ArticleBody {
 
 export type BodyBlock =
   | { type: "heading"; text: string }
-  | { type: "paragraph"; text: string };
+  | { type: "paragraph"; text: string }
+  | { type: "code"; language: string; code: string };
+
+const CODE_FENCE_RE = /```([\w-]*)\r?\n([\s\S]*?)```/g;
 
 const MAX_HEADING_LENGTH = 100;
 
@@ -37,10 +40,10 @@ function looksLikeHeading(text: string): boolean {
   return true;
 }
 
-export function parseBodyBlocks(body: string): BodyBlock[] {
+function parseTextChunk(text: string): BodyBlock[] {
   const blocks: BodyBlock[] = [];
 
-  for (const chunk of body.split(/\n\n+/)) {
+  for (const chunk of text.split(/\n\n+/)) {
     const trimmed = chunk.trim();
     if (!trimmed) continue;
 
@@ -73,6 +76,33 @@ export function parseBodyBlocks(body: string): BodyBlock[] {
     }
 
     blocks.push({ type: "paragraph", text: trimmed });
+  }
+
+  return blocks;
+}
+
+export function parseBodyBlocks(body: string): BodyBlock[] {
+  const blocks: BodyBlock[] = [];
+  let lastIndex = 0;
+
+  for (const match of body.matchAll(CODE_FENCE_RE)) {
+    const index = match.index ?? 0;
+    const before = body.slice(lastIndex, index);
+    if (before.trim()) {
+      blocks.push(...parseTextChunk(before));
+    }
+
+    blocks.push({
+      type: "code",
+      language: match[1] || "text",
+      code: match[2].replace(/\n$/, ""),
+    });
+    lastIndex = index + match[0].length;
+  }
+
+  const tail = body.slice(lastIndex);
+  if (tail.trim()) {
+    blocks.push(...parseTextChunk(tail));
   }
 
   return blocks;
