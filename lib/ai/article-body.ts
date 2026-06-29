@@ -8,7 +8,10 @@ export type ArticleFormat =
   | "guide";
 
 const GUIDE_SIGNALS =
-  /\b(jak|gdzie|kiedy|co zrobić|poradnik|przewodnik|krok po kroku|zdobyć|zdobyc|znaleźć|znalezc|ukończyć|ukonczyc|odblokować|odblokowac|how to|where to|walkthrough|step[- ]by[- ]step|unlock|complete the|tips for|guide to)\b/i;
+  /\b(jak (zdobyć|zdobyc|ukończyć|ukonczyc|odblokować|odblokowac|naprawić|naprawic|skonfigurować|skonfigurowac|zainstalować|zainstalowac|znaleźć|znalezc)|gdzie (znaleźć|znalezc|szukać|szukac)|kiedy |co zrobić|poradnik|przewodnik|krok po kroku|how to (find|get|unlock|complete|fix|install|set up)|where to (find|get)|walkthrough|step[- ]by[- ]step|unlock|complete the)\b/i;
+
+const GUIDE_EXCLUDE =
+  /\b(good deal|worth buying|worth it|recenzja|review|promocja|okazja cenowa|porównanie cen|vs\.|versus|czy warto kupić)\b/i;
 
 export interface ArticleBody {
   format: ArticleFormat;
@@ -99,7 +102,9 @@ export function isGuideCandidate(
   title: string,
   description?: string | null,
 ): boolean {
-  return GUIDE_SIGNALS.test(`${title} ${description ?? ""}`);
+  const text = `${title} ${description ?? ""}`;
+  if (GUIDE_EXCLUDE.test(text) && !GUIDE_SIGNALS.test(text)) return false;
+  return GUIDE_SIGNALS.test(text);
 }
 
 export function formatForSourceType(

@@ -222,6 +222,10 @@ export function normalizeGeneratedArticle(
     const seo = item.seo_title.trim();
     if (locale === "pl" && !GUIDE_SEO_TITLE_PL.test(seo)) return null;
     if (locale === "en" && !GUIDE_SEO_TITLE_EN.test(seo)) return null;
+    const body = item.body ?? "";
+    if (/krok\s*\d+/i.test(body) || /w tym przewodniku dowiesz/i.test(item.lead)) {
+      return null;
+    }
   }
 
   if (format === "community" && !item.context_note) {

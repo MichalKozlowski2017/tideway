@@ -118,7 +118,7 @@ Return ONLY valid JSON:
   "slug_hint": "url-slug"
 }
 
-Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje", "Nie uwierzysz", "Szok w", "Szok:", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", "niewiarygodne", "zszokował świat"
+Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje", "Nie uwierzysz", "Szok w", "Szok:", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", "niewiarygodne", "zszokował świat", "w tym przewodniku dowiesz się", "Krok 1", "Krok 2", "Krok 3", "krok w stronę przyszłości", "ma szansę się opłacić"
 
 Input:
 Title: ${item.title}
