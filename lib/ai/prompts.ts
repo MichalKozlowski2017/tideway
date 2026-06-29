@@ -52,13 +52,18 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - highlights: 3 bullets — each tied to a specific source fact
 - section_titles.highlights: e.g. "W pigułce ze źródeł"
 - section_titles.impact: e.g. "Synteza"`,
-  guide: `Format "guide" (practical how-to / where-to):
-- seo_title: search-query style for Google (PL: prefer "Jak…", "Gdzie…", "Kiedy…", or "Co zrobić, gdy…" + product/game/tool name). max 70 chars. Include the main keyword someone would type.
+  guide: `Format "guide" (practical answer to a specific reader question):
+- seo_title: search-query style for Google (PL: prefer "Jak…", "Gdzie…", "Kiedy…", or "Co zrobić, gdy…" + product/game/tool name). max 70 chars.
 - headline: punchy promise per headline rules — may differ from seo_title
-- lead: state the reader's problem and that this guide solves it — first sentence says what they will learn
-- body: actionable step-by-step guide, min 900 chars; use 3–4 "##" sections (steps, locations, or phases, e.g. "## Krok 1: …", "## Gdzie szukać", "## Jeśli nie działa"); only steps supported by Input
-- highlights: 3 concrete actionable steps or facts (locations, numbers, names)
-- slug_hint: keyword slug (e.g. gdzie-znalezc-bambus-forza-horizon-6)
+- lead: answer the core fact in sentence one — never "w tym przewodniku" / "czytelnicy dowiedzą się"
+- body: min 900 chars; helpful magazine prose with 3–4 "##" sections — titles must fit the topic naturally:
+  • in-game / location: "## Gdzie to znaleźć", "## Jak ukończyć", "## Jeśli nie działa"
+  • tools / tech: "## Jak to działa", "## Co ustawić", "## Typowe problemy"
+  • buying: "## Co dostajesz", "## Gdzie kupić", "## Czy warto"
+- NEVER use "Krok 1", "Krok 2", "Pierwszym krokiem" — write flowing paragraphs, not a tutorial template
+- NO code blocks in body — describe actions in plain Polish
+- highlights: 3 concrete facts (places, numbers, names)
+- slug_hint: keyword slug
 - section_titles.highlights: e.g. "W skrócie"
 - section_titles.impact: e.g. "Na co uważać"`,
 };
@@ -118,7 +123,7 @@ Return ONLY valid JSON:
   "slug_hint": "url-slug"
 }
 
-Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje", "Nie uwierzysz", "Szok w", "Szok:", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", "niewiarygodne", "zszokował świat", "w tym przewodniku dowiesz się", "Krok 1", "Krok 2", "Krok 3", "krok w stronę przyszłości", "ma szansę się opłacić", "w tym przewodniku dowiesz się", "Krok 1", "Krok 2", "Krok 3", "krok w stronę przyszłości", "ma szansę się opłacić"
+Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje", "Nie uwierzysz", "Szok w", "Szok:", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", "niewiarygodne", "zszokował świat", "w tym przewodniku dowiesz się", "Krok 1", "Krok 2", "Krok 3", "krok w stronę przyszłości", "ma szansę się opłacić"
 
 Input:
 Title: ${item.title}
