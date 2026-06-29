@@ -30,6 +30,7 @@ Rate this draft 1–10 on:
 2. Usefulness — reader learns something actionable or meaningful
 3. Voice — sounds edited, not like a generic AI template
 4. Grounding — claims fit the source material (no obvious hallucination)
+5. Headline — punchy and curiosity-driven, but honest: the article delivers what the headline promises (reject empty clickbait or dry press-release titles)
 
 Source excerpt:
 ${sourceText.slice(0, 1_200)}

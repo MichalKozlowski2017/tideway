@@ -1,7 +1,7 @@
 import type { ArticleFormat } from "@/lib/ai/article-body";
 import type { EditorialAngle } from "@/lib/ai/editorial-angle";
 import { getEditorialAngleGuide } from "@/lib/ai/editorial-angle";
-import { EDITORIAL_VOICE } from "@/lib/ai/editorial-voice";
+import { EDITORIAL_VOICE, HEADLINE_RULES } from "@/lib/ai/editorial-voice";
 import { matchesLocale } from "@/lib/ai/locale-check";
 import type { Locale } from "@/lib/types";
 
@@ -91,11 +91,13 @@ ${FORMAT_GUIDE[format]}
 
 Fact rule: Use ONLY facts present in Details below. Do not invent numbers, dates, company names, or quotes.
 
+${HEADLINE_RULES}
+
 Return ONLY valid JSON:
 {
   "format": "${format}",
-  "headline": "unique headline — avoid clichés like 'Nowa era' or 'zyskuje na popularności'",
-  "seo_title": "max 70 chars",
+  "headline": "punchy on-page title per headline rules — specific fact + hook",
+  "seo_title": "calmer keyword title for Google, max 70 chars — must differ from headline",
   "seo_description": "max 160 chars",
   "lead": "see format rules above",
   "body": "optional paragraphs for story/community/analysis",
@@ -107,7 +109,7 @@ Return ONLY valid JSON:
   "slug_hint": "url-slug"
 }
 
-Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje"
+Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje", "Nie uwierzysz", "Szok w", "Szok:", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", "niewiarygodne", "zszokował świat"
 
 Input:
 Title: ${item.title}
@@ -155,11 +157,13 @@ ${FORMAT_GUIDE.synthesis}
 
 Fact rule: Use ONLY facts present in the sources below. When sources disagree, say so explicitly.
 
+${HEADLINE_RULES}
+
 Return ONLY valid JSON:
 {
   "format": "synthesis",
-  "headline": "unique combined headline",
-  "seo_title": "max 70 chars",
+  "headline": "punchy combined headline per headline rules",
+  "seo_title": "calmer keyword title, max 70 chars — must differ from headline",
   "seo_description": "max 160 chars",
   "lead": "see format rules",
   "body": "essay with ## sections",
@@ -170,7 +174,7 @@ Return ONLY valid JSON:
   "slug_hint": "url-slug"
 }
 
-Banned phrases (never use): "Nowa era", "zyskuje na popularności", "Artykuł omawia", "The real story behind", "signals a broader trend"
+Banned phrases (never use): "Nowa era", "zyskuje na popularności", "Artykuł omawia", "The real story behind", "signals a broader trend", "Nie uwierzysz", "Szok w", "Wszystko, co musisz wiedzieć"
 
 ${sourcesBlock}`;
 }
@@ -186,10 +190,12 @@ export function buildDigestPrompt(
 
   return `You are a news editor for Tideway. Create a ${digestType} digest in ${lang} for category ${category} covering ${period}.
 
+${HEADLINE_RULES}
+
 Return ONLY valid JSON:
 {
-  "headline": "string",
-  "seo_title": "string",
+  "headline": "punchy digest headline per headline rules",
+  "seo_title": "calmer keyword title — must differ from headline",
   "seo_description": "string",
   "lead": "string",
   "bullet_points": [
