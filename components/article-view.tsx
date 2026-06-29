@@ -17,6 +17,7 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   analysis: { pl: "Analiza", en: "Analysis" },
   essay: { pl: "Esej", en: "Essay" },
   synthesis: { pl: "Synteza", en: "Synthesis" },
+  guide: { pl: "Poradnik", en: "Guide" },
 };
 
 function ArticleBodyContent({ body, longRead }: { body: string; longRead: boolean }) {

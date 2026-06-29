@@ -4,7 +4,11 @@ export type ArticleFormat =
   | "community"
   | "analysis"
   | "essay"
-  | "synthesis";
+  | "synthesis"
+  | "guide";
+
+const GUIDE_SIGNALS =
+  /\b(jak|gdzie|kiedy|co zrobić|poradnik|przewodnik|krok po kroku|zdobyć|zdobyc|znaleźć|znalezc|ukończyć|ukonczyc|odblokować|odblokowac|how to|where to|walkthrough|step[- ]by[- ]step|unlock|complete the|tips for|guide to)\b/i;
 
 export interface ArticleBody {
   format: ArticleFormat;
@@ -91,6 +95,13 @@ export function parseArticleBody(summary: unknown): ArticleBody {
   return { format: "brief", highlights: [] };
 }
 
+export function isGuideCandidate(
+  title: string,
+  description?: string | null,
+): boolean {
+  return GUIDE_SIGNALS.test(`${title} ${description ?? ""}`);
+}
+
 export function formatForSourceType(
   sourceType: string,
   _category = "",
@@ -111,6 +122,25 @@ export function formatForSourceType(
   }
 }
 
+export function resolveArticleFormat(item: {
+  title: string;
+  description?: string | null;
+  sources: { type: string; category: string };
+}): ArticleFormat {
+  if (
+    item.sources.type === "rss" &&
+    isGuideCandidate(item.title, item.description)
+  ) {
+    return "guide";
+  }
+  return formatForSourceType(item.sources.type, item.sources.category);
+}
+
 export function isLongReadFormat(format: ArticleFormat): boolean {
-  return format === "essay" || format === "analysis" || format === "synthesis";
+  return (
+    format === "essay" ||
+    format === "analysis" ||
+    format === "synthesis" ||
+    format === "guide"
+  );
 }

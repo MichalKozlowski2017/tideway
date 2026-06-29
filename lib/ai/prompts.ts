@@ -52,6 +52,15 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - highlights: 3 bullets — each tied to a specific source fact
 - section_titles.highlights: e.g. "W pigułce ze źródeł"
 - section_titles.impact: e.g. "Synteza"`,
+  guide: `Format "guide" (practical how-to / where-to):
+- seo_title: search-query style for Google (PL: prefer "Jak…", "Gdzie…", "Kiedy…", or "Co zrobić, gdy…" + product/game/tool name). max 70 chars. Include the main keyword someone would type.
+- headline: punchy promise per headline rules — may differ from seo_title
+- lead: state the reader's problem and that this guide solves it — first sentence says what they will learn
+- body: actionable step-by-step guide, min 900 chars; use 3–4 "##" sections (steps, locations, or phases, e.g. "## Krok 1: …", "## Gdzie szukać", "## Jeśli nie działa"); only steps supported by Input
+- highlights: 3 concrete actionable steps or facts (locations, numbers, names)
+- slug_hint: keyword slug (e.g. gdzie-znalezc-bambus-forza-horizon-6)
+- section_titles.highlights: e.g. "W skrócie"
+- section_titles.impact: e.g. "Na co uważać"`,
 };
 
 export function buildSingleArticlePrompt(

@@ -1,6 +1,9 @@
 import OpenAI from "openai";
-import { formatForSourceType } from "@/lib/ai/article-body";
-import type { ArticleFormat } from "@/lib/ai/article-body";
+import {
+  isGuideCandidate,
+  resolveArticleFormat,
+  type ArticleFormat,
+} from "@/lib/ai/article-body";
 import { findSynthesisCluster } from "@/lib/ai/cluster-items";
 import { pickEditorialAngle } from "@/lib/ai/editorial-angle";
 import {
@@ -241,6 +244,7 @@ function isRssLongReadCandidate(item: PendingItem): boolean {
 }
 
 function pickGuaranteedLongReadFormat(item: PendingItem): ArticleFormat {
+  if (isGuideCandidate(item.title, item.description)) return "guide";
   const n = item.id.charCodeAt(0) + item.id.charCodeAt(item.id.length - 1);
   return n % 2 === 0 ? "essay" : "analysis";
 }
@@ -263,10 +267,11 @@ function planGenerationWork(eligible: PendingItem[]): GenerationWork[] {
     const rssCandidates = sortPendingItems(
       remaining.filter(isRssLongReadCandidate),
     );
-    if (rssCandidates.length > 0) {
-      longReadItem = rssCandidates[0]!;
-      reserved.add(longReadItem.id);
-    }
+    const guideCandidates = rssCandidates.filter((item) =>
+      isGuideCandidate(item.title, item.description),
+    );
+    longReadItem = guideCandidates[0] ?? rssCandidates[0] ?? null;
+    if (longReadItem) reserved.add(longReadItem.id);
   }
 
   const singles = selectBatch(
@@ -659,9 +664,7 @@ export async function generatePendingArticles(): Promise<{
       continue;
     }
 
-    const articleFormat =
-      job.format ??
-      formatForSourceType(job.item.sources.type, job.item.sources.category);
+    const articleFormat = job.format ?? resolveArticleFormat(job.item);
     const { published, tokensUsed: used } = await generateAndPublishSingle({
       supabase,
       rawItem: job.item,

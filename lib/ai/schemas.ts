@@ -18,6 +18,7 @@ export const singleArticleResponseSchema = z.object({
     "analysis",
     "essay",
     "synthesis",
+    "guide",
   ]),
   headline: z.string().min(10),
   seo_title: z.string().min(10).max(70),
@@ -99,9 +100,14 @@ const MIN_BODY: Record<ArticleFormat, number> = {
   analysis: 900,
   essay: 1_000,
   synthesis: 1_000,
+  guide: 900,
   community: 420,
   brief: 0,
 };
+
+const GUIDE_SEO_TITLE_PL =
+  /^(jak|gdzie|kiedy|co zrobić|jak zdobyć|jak ukończyć|gdzie znaleźć|gdzie znalezc)\b/i;
+const GUIDE_SEO_TITLE_EN = /^how to\b/i;
 
 const MIN_HIGHLIGHT_LENGTH = 25;
 
@@ -185,24 +191,37 @@ export function normalizeGeneratedArticle(
   }
 
   if (
-    (format === "analysis" || format === "community" || format === "essay" || format === "synthesis") &&
+    (format === "analysis" ||
+      format === "community" ||
+      format === "essay" ||
+      format === "synthesis" ||
+      format === "guide") &&
     (!item.highlights || item.highlights.length < 3)
   ) {
     return null;
   }
 
   if (
-    (format === "analysis" || format === "essay" || format === "synthesis") &&
+    (format === "analysis" ||
+      format === "essay" ||
+      format === "synthesis" ||
+      format === "guide") &&
     item.highlights?.some((h) => h.length < MIN_HIGHLIGHT_LENGTH)
   ) {
     return null;
   }
 
   if (
-    (format === "essay" || format === "synthesis") &&
+    (format === "essay" || format === "synthesis" || format === "guide") &&
     (!item.body || !hasSubheadings(item.body))
   ) {
     return null;
+  }
+
+  if (format === "guide") {
+    const seo = item.seo_title.trim();
+    if (locale === "pl" && !GUIDE_SEO_TITLE_PL.test(seo)) return null;
+    if (locale === "en" && !GUIDE_SEO_TITLE_EN.test(seo)) return null;
   }
 
   if (format === "community" && !item.context_note) {

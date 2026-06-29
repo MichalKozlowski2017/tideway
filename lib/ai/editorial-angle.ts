@@ -48,6 +48,7 @@ export function pickEditorialAngle(
   descriptionLength: number,
 ): EditorialAngle | undefined {
   if (format === "community") return undefined;
+  if (format === "guide") return "practical";
   if (descriptionLength < 150) return "context";
 
   const angles = CATEGORY_ANGLES[category];
