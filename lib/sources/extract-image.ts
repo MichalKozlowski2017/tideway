@@ -21,6 +21,30 @@ export function isValidImageUrl(url: string | null | undefined): url is string {
   }
 }
 
+/** Auto-generated social cards (GitHub repos, etc.) — poor fit for article thumbnails */
+export function isWeakPreviewImage(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
+  try {
+    const { hostname, pathname } = new URL(url.trim());
+    const host = hostname.toLowerCase();
+
+    if (host === "opengraph.githubassets.com") return true;
+    if (host === "repository-images.githubusercontent.com") return true;
+    if (host === "avatars.githubusercontent.com") return true;
+
+    // github.com/*/opengraph/* social preview PNGs
+    if (host === "github.com" && pathname.includes("/opengraph/")) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function isUsableArticleImage(url: string | null | undefined): url is string {
+  return isValidImageUrl(url) && !isWeakPreviewImage(url);
+}
+
 export function pickLargestImageUrl(candidates: Array<string | undefined | null>): string | null {
   for (const url of candidates) {
     if (isValidImageUrl(url)) return url.trim();

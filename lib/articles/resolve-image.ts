@@ -1,9 +1,18 @@
 import type { Category } from "@/lib/types";
 import { fetchOgImage } from "@/lib/sources/og-image";
-import { isValidImageUrl } from "@/lib/sources/extract-image";
+import {
+  isUsableArticleImage,
+  isValidImageUrl,
+  isWeakPreviewImage,
+} from "@/lib/sources/extract-image";
 
 function isStockFallback(url: string): boolean {
   return url.includes("images.unsplash.com");
+}
+
+/** AI/tech often link to GitHub/HN — show branded gradient instead of stock photos */
+function prefersCategoryPlaceholder(category: Category): boolean {
+  return category === "ai" || category === "technology";
 }
 
 export async function resolveArticleImageUrl(params: {
@@ -12,23 +21,29 @@ export async function resolveArticleImageUrl(params: {
   fetchOg?: boolean;
   category?: Category;
 }): Promise<string | null> {
+  const source = params.sourceImageUrl?.trim();
+
   if (
-    isValidImageUrl(params.sourceImageUrl) &&
-    !isStockFallback(params.sourceImageUrl.trim())
+    source &&
+    isUsableArticleImage(source) &&
+    !isStockFallback(source)
   ) {
-    return params.sourceImageUrl.trim();
+    return source;
   }
 
   if (params.fetchOg !== false) {
     const og = await fetchOgImage(params.pageUrl);
-    if (isValidImageUrl(og)) return og;
+    if (isUsableArticleImage(og)) return og;
   }
 
-  if (isValidImageUrl(params.sourceImageUrl)) {
-    return params.sourceImageUrl.trim();
+  if (source && isValidImageUrl(source) && !isWeakPreviewImage(source)) {
+    return source;
   }
 
   if (params.category) {
+    if (prefersCategoryPlaceholder(params.category)) {
+      return null;
+    }
     return CATEGORY_FALLBACK_IMAGE[params.category] ?? CATEGORY_FALLBACK_IMAGE.technology;
   }
 

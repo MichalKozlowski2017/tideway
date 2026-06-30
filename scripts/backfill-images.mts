@@ -11,7 +11,12 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
 
 console.log("Tideway — backfill obrazów artykułów…\n");
 
-const { backfillArticleImages } = await import("../lib/articles/backfill-images.ts");
+const { backfillArticleImages, replaceWeakArticleImages } = await import(
+  "../lib/articles/backfill-images.ts"
+);
+
+const weak = await replaceWeakArticleImages({ concurrency: 5 });
+console.log("Weak images:", JSON.stringify(weak, null, 2), "\n");
 
 const result = await backfillArticleImages({ concurrency: 5 });
 console.log("\n", JSON.stringify(result, null, 2));

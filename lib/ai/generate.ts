@@ -393,12 +393,11 @@ async function publishArticle(params: {
   const imageCandidates = params.rawItems
     .map((item) => item.image_url)
     .filter(Boolean);
-  const imageUrl =
-    (await resolveArticleImageUrl({
+  const imageUrl = await resolveArticleImageUrl({
       sourceImageUrl: imageCandidates[0],
       pageUrl: primary.url,
       category: params.category,
-    })) ?? CATEGORY_FALLBACK_IMAGE[params.category];
+    });
 
   const { error: articleError } = await params.supabase.from("articles").insert({
     slug,
