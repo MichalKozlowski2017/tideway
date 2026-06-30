@@ -356,6 +356,10 @@ async function generateArticleDraft(params: {
 
     if (!normalized) continue;
 
+    if (attempt === 0) {
+      return { article: normalized, tokensUsed };
+    }
+
     const quality = await scoreArticleQuality(
       normalized,
       params.sourceText,

@@ -10,7 +10,7 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
 }
 
 console.log("Tideway generate — start…");
-console.log("(Produkcja: 1 batch co 30 min. Lokalnie: 2 batche testowe.)\n");
+console.log("(Produkcja: 1 batch co 20 min, ~130 artykułów/dzień. Lokalnie: 2 batche testowe.)\n");
 
 const { generatePendingArticles } = await import("../lib/ai/generate.ts");
 
