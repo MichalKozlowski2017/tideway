@@ -19,6 +19,9 @@ export type PromptOptions = {
   angle?: EditorialAngle;
 };
 
+const BANNED_PHRASES =
+  '"Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje", "Nie uwierzysz", "Szok w", "Szok:", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", "niewiarygodne", "zszokował świat", "w tym przewodniku dowiesz się", "Krok 1", "Krok 2", "Krok 3", "krok w stronę przyszłości", "ma szansę się opłacić"';
+
 const FORMAT_GUIDE: Record<ArticleFormat, string> = {
   story: `Format "story":
 - lead: vivid opening with the main fact in first sentence
@@ -123,7 +126,7 @@ Return ONLY valid JSON:
   "slug_hint": "url-slug"
 }
 
-Banned phrases (never use): "Nowa era", "zyskuje na popularności", "zyskuje uwagę", "przyciąga uwagę", "Artykuł omawia", "Artykuł na temat", "W artykule", "został zaprojektowany z myślą", "budząc kontrowersje", "zrewolucjonizować", "Społeczność intensywnie dyskutuje", "The real story behind", "signals a broader trend", "investors are watching closely", "Kluczowe punkty analizy", "Potencjalne konsekwencje", "Nie uwierzysz", "Szok w", "Szok:", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", "niewiarygodne", "zszokował świat", "w tym przewodniku dowiesz się", "Krok 1", "Krok 2", "Krok 3", "krok w stronę przyszłości", "ma szansę się opłacić"
+Banned phrases (never use): ${BANNED_PHRASES}
 
 Input:
 Title: ${item.title}
@@ -188,7 +191,7 @@ Return ONLY valid JSON:
   "slug_hint": "url-slug"
 }
 
-Banned phrases (never use): "Nowa era", "zyskuje na popularności", "Artykuł omawia", "The real story behind", "signals a broader trend", "Nie uwierzysz", "Szok w", "Wszystko, co musisz wiedzieć"
+Banned phrases (never use): ${BANNED_PHRASES}
 
 ${sourcesBlock}`;
 }
@@ -227,6 +230,8 @@ Rules for bullet_points:
 - Each item MUST include source_index (1-based) pointing to a headline from the list below
 - text: concise summary in ${lang}, not a copy of the headline
 - Use each source_index at most once when possible
+
+Banned phrases (never use): ${BANNED_PHRASES}
 
 Headlines to synthesize:
 ${sources.map((s, i) => `${i + 1}. ${s.headline}`).join("\n")}`;
