@@ -60,9 +60,9 @@ export async function backfillArticleImages(options?: {
 
     if (!rawItemId) {
       const imageUrl =
-        category === "ai" || category === "technology"
+        category === "ai" || category === "it"
           ? null
-          : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.technology;
+          : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.tech;
 
       const { error: articleError } = await supabase
         .from("articles")
@@ -100,9 +100,9 @@ export async function backfillArticleImages(options?: {
 
     const fallback =
       imageUrl ??
-      (category === "ai" || category === "technology"
+      (category === "ai" || category === "it"
         ? null
-        : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.technology);
+        : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.tech);
 
     const { error: articleError } = await supabase
       .from("articles")
@@ -181,9 +181,9 @@ export async function replaceWeakArticleImages(options?: {
 
     const imageUrl =
       resolved ??
-      (category === "ai" || category === "technology"
+      (category === "ai" || category === "it"
         ? null
-        : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.technology);
+        : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.tech);
 
     const { error: articleError } = await supabase
       .from("articles")

@@ -12,7 +12,7 @@ function isStockFallback(url: string): boolean {
 
 /** AI/tech often link to GitHub/HN — show branded gradient instead of stock photos */
 function prefersCategoryPlaceholder(category: Category): boolean {
-  return category === "ai" || category === "technology";
+  return category === "ai" || category === "it";
 }
 
 export async function resolveArticleImageUrl(params: {
@@ -44,7 +44,7 @@ export async function resolveArticleImageUrl(params: {
     if (prefersCategoryPlaceholder(params.category)) {
       return null;
     }
-    return CATEGORY_FALLBACK_IMAGE[params.category] ?? CATEGORY_FALLBACK_IMAGE.technology;
+    return CATEGORY_FALLBACK_IMAGE[params.category] ?? CATEGORY_FALLBACK_IMAGE.tech;
   }
 
   return null;
@@ -52,8 +52,9 @@ export async function resolveArticleImageUrl(params: {
 
 /** Stock photos (Unsplash) — last resort when RSS/og:image unavailable */
 export const CATEGORY_FALLBACK_IMAGE: Record<Category, string> = {
-  technology:
+  tech:
     "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=630&fit=crop&q=80",
+  it: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1200&h=630&fit=crop&q=80",
   gaming:
     "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&h=630&fit=crop&q=80",
   ai: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=1200&h=630&fit=crop&q=80",
@@ -67,10 +68,15 @@ export const CATEGORY_PLACEHOLDER: Record<
   Category,
   { gradient: string; accent: string; label: string }
 > = {
-  technology: {
+  tech: {
     gradient: "from-slate-800 via-blue-900 to-cyan-800",
     accent: "text-cyan-200",
-    label: "Technologia",
+    label: "Tech",
+  },
+  it: {
+    gradient: "from-zinc-900 via-slate-800 to-emerald-900",
+    accent: "text-emerald-200",
+    label: "IT",
   },
   gaming: {
     gradient: "from-violet-900 via-purple-800 to-fuchsia-700",

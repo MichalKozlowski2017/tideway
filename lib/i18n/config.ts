@@ -14,9 +14,13 @@ export const categoryLabels: Record<
   Record<string, { title: string; description: string }>
 > = {
   pl: {
-    technology: {
-      title: "Trendy w technologii",
-      description: "Najświeższe wiadomości tech.",
+    tech: {
+      title: "Trendy tech",
+      description: "Gadżety, sprzęt i produkty — co nowego na rynku.",
+    },
+    it: {
+      title: "Trendy IT",
+      description: "Programowanie, devops i security — newsy dla developerów.",
     },
     gaming: {
       title: "Trendy w grach",
@@ -36,9 +40,13 @@ export const categoryLabels: Record<
     },
   },
   en: {
-    technology: {
-      title: "Technology trends",
-      description: "The latest tech news.",
+    tech: {
+      title: "Tech trends",
+      description: "Gadgets, hardware, and product news.",
+    },
+    it: {
+      title: "IT trends",
+      description: "Programming, devops, and security for developers.",
     },
     gaming: {
       title: "Gaming trends",
@@ -61,14 +69,16 @@ export const categoryLabels: Record<
 
 export const categoryNavLabels: Record<Locale, Record<Category, string>> = {
   pl: {
-    technology: "Technologia",
+    tech: "Tech",
+    it: "IT",
     gaming: "Gry",
     ai: "AI",
     sport: "Sport",
     finance: "Finanse",
   },
   en: {
-    technology: "Technology",
+    tech: "Tech",
+    it: "IT",
     gaming: "Gaming",
     ai: "AI",
     sport: "Sport",
@@ -122,7 +132,7 @@ export const ui: Record<
   pl: {
     homeTitle: "Tideway — co dziś w trendach",
     homeDescription:
-      "Co dziś grzeje w sieci — tech, gry, sport i finanse. Zebrane i opisane, żebyś nie musiał przewijać setek linków.",
+      "Co dziś grzeje w sieci — tech, IT, gry, sport i finanse. Zebrane i opisane, żebyś nie musiał przewijać setek linków.",
     dailyDigest: "Dzienny przegląd",
     weeklyDigest: "Tygodniowy przegląd",
     keyPoints: "Najważniejsze punkty",

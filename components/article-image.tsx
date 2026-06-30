@@ -18,7 +18,7 @@ export function ArticleImage({
   variant = "card",
 }: ArticleImageProps) {
   const placeholder =
-    CATEGORY_PLACEHOLDER[category as Category] ?? CATEGORY_PLACEHOLDER.technology;
+    CATEGORY_PLACEHOLDER[category as Category] ?? CATEGORY_PLACEHOLDER.tech;
 
   const hero = variant === "hero";
   const aspect = hero ? "aspect-[21/9]" : "aspect-[16/10]";

@@ -23,7 +23,8 @@ const ANGLE_GUIDE: Record<EditorialAngle, string> = {
 
 const CATEGORY_ANGLES: Record<Category, EditorialAngle[]> = {
   ai: ["stakes", "practical", "comparison", "context"],
-  technology: ["practical", "context", "comparison", "local_impact"],
+  tech: ["practical", "comparison", "local_impact", "context"],
+  it: ["practical", "context", "comparison", "stakes"],
   gaming: ["practical", "local_impact", "stakes"],
   finance: ["stakes", "local_impact", "context"],
   sport: ["context", "stakes", "local_impact"],

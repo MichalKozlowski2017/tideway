@@ -1,10 +1,11 @@
 export type Locale = "pl" | "en";
 
-export type Category = "technology" | "gaming" | "ai" | "sport" | "finance";
+export type Category = "tech" | "it" | "gaming" | "ai" | "sport" | "finance";
 
 /** Categories shown in nav and on the home page */
 export const MAIN_CATEGORIES: Category[] = [
-  "technology",
+  "tech",
+  "it",
   "gaming",
   "ai",
   "sport",
@@ -17,7 +18,8 @@ export const GENERATION_CATEGORIES: Category[] = [
   "sport",
   "finance",
   "gaming",
-  "technology",
+  "tech",
+  "it",
 ];
 
 export type SourceType =
@@ -94,14 +96,16 @@ export interface NormalizedItem {
 
 export const CATEGORY_SLUGS: Record<Locale, Record<Category, string>> = {
   pl: {
-    technology: "technologia",
+    tech: "tech",
+    it: "it",
     gaming: "gry",
     ai: "ai",
     sport: "sport",
     finance: "finanse",
   },
   en: {
-    technology: "technology",
+    tech: "tech",
+    it: "it",
     gaming: "gaming",
     ai: "ai",
     sport: "sport",
@@ -110,8 +114,12 @@ export const CATEGORY_SLUGS: Record<Locale, Record<Category, string>> = {
 };
 
 export const SLUG_TO_CATEGORY: Record<string, Category> = {
-  technologia: "technology",
-  technology: "technology",
+  tech: "tech",
+  it: "it",
+  /** @deprecated 301 → /trendy/tech */
+  technologia: "tech",
+  /** @deprecated 301 → /trendy/tech */
+  technology: "tech",
   gry: "gaming",
   gaming: "gaming",
   ai: "ai",

@@ -1,7 +1,7 @@
 import type { NormalizedItem, Source } from "@/lib/types";
 
 const YOUTUBE_CATEGORY_IDS: Record<string, string> = {
-  technology: "28",
+  tech: "28",
   gaming: "20",
   ai: "28",
   sport: "17",

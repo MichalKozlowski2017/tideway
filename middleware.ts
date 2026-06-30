@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const EN_CATEGORY_TO_PL: Record<string, string> = {
-  technology: "technologia",
+  tech: "tech",
+  it: "it",
+  technology: "tech",
   gaming: "gry",
   ai: "ai",
   sport: "sport",

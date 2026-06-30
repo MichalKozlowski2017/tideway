@@ -5,12 +5,19 @@ const secondaryHosts = ["tideway.eu", "www.tideway.eu", "www.tideway.pl"];
 
 const nextConfig: NextConfig = {
   async redirects() {
-    return secondaryHosts.map((host) => ({
-      source: "/:path*",
-      has: [{ type: "host", value: host }],
-      destination: `${PRIMARY_SITE_URL}/:path*`,
-      permanent: true,
-    }));
+    return [
+      {
+        source: "/trendy/technologia",
+        destination: "/trendy/tech",
+        permanent: true,
+      },
+      ...secondaryHosts.map((host) => ({
+        source: "/:path*",
+        has: [{ type: "host" as const, value: host }],
+        destination: `${PRIMARY_SITE_URL}/:path*`,
+        permanent: true,
+      })),
+    ];
   },
   images: {
     remotePatterns: [

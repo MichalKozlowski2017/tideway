@@ -10,7 +10,7 @@ export const revalidate = 300;
 export const metadata: Metadata = {
   title: "Tideway — today's trends",
   description:
-    "Automated trend summaries: technology, gaming, AI, sports, and finance.",
+    "Automated trend summaries: tech, IT, gaming, AI, sports, and finance.",
 };
 
 export default async function EnHomePage() {

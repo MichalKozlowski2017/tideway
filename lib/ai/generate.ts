@@ -738,7 +738,7 @@ export async function generateDigest(
   const digestImageUrl =
     recent.find((a) => a.image_url)?.image_url ??
     CATEGORY_FALLBACK_IMAGE[category as Category] ??
-    CATEGORY_FALLBACK_IMAGE.technology;
+    CATEGORY_FALLBACK_IMAGE.tech;
 
   const prompt = buildDigestPrompt(locale, digestType, category, recent);
 
