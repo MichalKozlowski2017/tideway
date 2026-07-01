@@ -200,6 +200,59 @@ export async function getRelatedArticles(
 ): Promise<Article[]> {
   if (!hasSupabaseConfig()) return [];
   const client = getSupabasePublic();
+  const tags = (article.tags ?? []).filter(Boolean);
+
+  if (tags.length > 0) {
+    const { data, error } = await client
+      .from("articles")
+      .select("*")
+      .eq("locale", article.locale)
+      .eq("is_published", true)
+      .neq("id", article.id)
+      .overlaps("tags", tags)
+      .order("published_at", { ascending: false })
+      .limit(40);
+
+    if (error) throw error;
+
+    const tagSet = new Set(tags);
+    const ranked = (data ?? [])
+      .map((row) => mapArticle(row))
+      .sort((a, b) => {
+        const overlapDiff =
+          b.tags.filter((tag) => tagSet.has(tag)).length -
+          a.tags.filter((tag) => tagSet.has(tag)).length;
+        if (overlapDiff !== 0) return overlapDiff;
+        return (
+          new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+        );
+      });
+
+    if (ranked.length >= limit) return ranked.slice(0, limit);
+
+    const picked = new Set(ranked.map((item) => item.id));
+    const { data: fallback, error: fallbackError } = await client
+      .from("articles")
+      .select("*")
+      .eq("locale", article.locale)
+      .eq("category", article.category)
+      .eq("is_published", true)
+      .neq("id", article.id)
+      .order("published_at", { ascending: false })
+      .limit(limit * 2);
+
+    if (fallbackError) throw fallbackError;
+
+    for (const row of fallback ?? []) {
+      if (ranked.length >= limit) break;
+      if (picked.has(row.id as string)) continue;
+      ranked.push(mapArticle(row));
+      picked.add(row.id as string);
+    }
+
+    return ranked.slice(0, limit);
+  }
+
   const { data, error } = await client
     .from("articles")
     .select("*")
@@ -263,8 +316,10 @@ export async function getArticlesByTagPaginated(params: {
 
 export async function getDistinctTags(
   locale: string,
+  options?: { minCount?: number },
 ): Promise<Array<{ name: string; slug: string; count: number }>> {
   if (!hasSupabaseConfig()) return [];
+  const minCount = options?.minCount ?? 1;
   const client = getSupabaseAdmin();
   const data = await fetchAllRows<{ tags: string[] }>(async (from, to) => {
     const { data: page, error } = await client
@@ -285,7 +340,7 @@ export async function getDistinctTags(
 
   return [...counts.entries()]
     .map(([name, count]) => ({ name, slug: tagSlug(name), count }))
-    .filter((item) => item.slug.length > 0)
+    .filter((item) => item.slug.length > 0 && item.count >= minCount)
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, locale));
 }
 

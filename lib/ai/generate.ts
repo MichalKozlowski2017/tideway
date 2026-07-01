@@ -37,8 +37,10 @@ const BATCH_SIZE = 3;
 const PENDING_POOL_SIZE = 250;
 const PENDING_FETCH_SIZE = 500;
 const AI_POOL_MIN = 50;
+const GAMING_POOL_MIN = 45;
 const CATEGORY_POOL_MIN = 30;
 const AI_BATCH_SLOTS = 1;
+const GAMING_BATCH_SLOTS = 1;
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -172,8 +174,9 @@ function buildBalancedPool(items: PendingItem[]): PendingItem[] {
   };
 
   takeFromCategory("ai", AI_POOL_MIN);
+  takeFromCategory("gaming", GAMING_POOL_MIN);
   for (const cat of GENERATION_CATEGORIES) {
-    if (cat === "ai") continue;
+    if (cat === "ai" || cat === "gaming") continue;
     takeFromCategory(cat, CATEGORY_POOL_MIN);
   }
 
@@ -217,9 +220,14 @@ function selectBatch(items: PendingItem[], maxSize = BATCH_SIZE): PendingItem[] 
     takeFrom("ai");
   }
 
+  for (let i = 0; i < GAMING_BATCH_SLOTS && batch.length < maxSize; i += 1) {
+    if (!byCategory.get("gaming")?.length) break;
+    takeFrom("gaming");
+  }
+
   for (const cat of GENERATION_CATEGORIES) {
     if (batch.length >= maxSize) break;
-    if (cat === "ai") continue;
+    if (cat === "ai" || cat === "gaming") continue;
     takeFrom(cat);
   }
 
@@ -227,6 +235,7 @@ function selectBatch(items: PendingItem[], maxSize = BATCH_SIZE): PendingItem[] 
     let added = false;
     for (const cat of [...GENERATION_CATEGORIES].reverse()) {
       if (batch.length >= maxSize) break;
+      if (cat === "ai" || cat === "gaming") continue;
       if (takeFrom(cat)) added = true;
     }
     if (!added) break;
@@ -267,10 +276,16 @@ function planGenerationWork(eligible: PendingItem[]): GenerationWork[] {
     const rssCandidates = sortPendingItems(
       remaining.filter(isRssLongReadCandidate),
     );
+    const gamingGuideCandidates = rssCandidates.filter(
+      (item) =>
+        item.sources.category === "gaming" &&
+        isGuideCandidate(item.title, item.description),
+    );
     const guideCandidates = rssCandidates.filter((item) =>
       isGuideCandidate(item.title, item.description),
     );
-    longReadItem = guideCandidates[0] ?? rssCandidates[0] ?? null;
+    longReadItem =
+      gamingGuideCandidates[0] ?? guideCandidates[0] ?? rssCandidates[0] ?? null;
     if (longReadItem) reserved.add(longReadItem.id);
   }
 

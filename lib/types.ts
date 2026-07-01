@@ -12,12 +12,12 @@ export const MAIN_CATEGORIES: Category[] = [
   "finance",
 ];
 
-/** Round-robin order for generation — understaffed categories first */
+/** Round-robin order for generation — gaming before tech/it backlog */
 export const GENERATION_CATEGORIES: Category[] = [
   "ai",
+  "gaming",
   "sport",
   "finance",
-  "gaming",
   "tech",
   "it",
 ];

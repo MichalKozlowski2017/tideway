@@ -45,7 +45,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const tagRoutes: MetadataRoute.Sitemap = [];
     for (const locale of LOCALES) {
-      const tags = await getDistinctTags(locale);
+      const tags = await getDistinctTags(locale, { minCount: 2 });
       for (const tag of tags) {
         tagRoutes.push({
           url: `${base}${tagPath(locale as Locale, tag.slug)}`,
