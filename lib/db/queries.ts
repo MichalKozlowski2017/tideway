@@ -8,6 +8,27 @@ import type { Article } from "@/lib/types";
 
 export const ARTICLES_PAGE_SIZE = 24;
 
+/** Supabase/PostgREST returns at most 1000 rows per request. */
+const SUPABASE_PAGE_SIZE = 1000;
+
+async function fetchAllRows<T>(
+  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: Error | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await fetchPage(offset, offset + SUPABASE_PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < SUPABASE_PAGE_SIZE) break;
+    offset += SUPABASE_PAGE_SIZE;
+  }
+
+  return rows;
+}
+
 export type PaginatedArticles = {
   articles: Article[];
   total: number;
@@ -245,13 +266,15 @@ export async function getDistinctTags(
 ): Promise<Array<{ name: string; slug: string; count: number }>> {
   if (!hasSupabaseConfig()) return [];
   const client = getSupabaseAdmin();
-  const { data, error } = await client
-    .from("articles")
-    .select("tags")
-    .eq("locale", locale)
-    .eq("is_published", true);
-
-  if (error) throw error;
+  const data = await fetchAllRows<{ tags: string[] }>(async (from, to) => {
+    const { data: page, error } = await client
+      .from("articles")
+      .select("tags")
+      .eq("locale", locale)
+      .eq("is_published", true)
+      .range(from, to);
+    return { data: page, error };
+  });
 
   const counts = new Map<string, number>();
   for (const row of data ?? []) {
@@ -279,13 +302,15 @@ export async function getAllArticleSlugs(): Promise<
 > {
   if (!hasSupabaseConfig()) return [];
   const client = getSupabaseAdmin();
-  const { data, error } = await client
-    .from("articles")
-    .select("locale, slug, updated_at")
-    .eq("is_published", true);
-
-  if (error) throw error;
-  return data ?? [];
+  return fetchAllRows(async (from, to) => {
+    const { data, error } = await client
+      .from("articles")
+      .select("locale, slug, updated_at")
+      .eq("is_published", true)
+      .order("published_at", { ascending: false })
+      .range(from, to);
+    return { data, error };
+  });
 }
 
 export async function getLatestJobStatus() {
