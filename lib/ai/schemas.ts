@@ -19,6 +19,7 @@ export const singleArticleResponseSchema = z.object({
     "essay",
     "synthesis",
     "guide",
+    "quiz",
   ]),
   headline: z.string().min(10),
   seo_title: z.string().min(10).max(70),
@@ -101,6 +102,7 @@ const MIN_BODY: Record<ArticleFormat, number> = {
   essay: 1_000,
   synthesis: 1_000,
   guide: 900,
+  quiz: 650,
   community: 420,
   brief: 0,
 };
@@ -108,6 +110,8 @@ const MIN_BODY: Record<ArticleFormat, number> = {
 const GUIDE_SEO_TITLE_PL =
   /^(jak|gdzie|kiedy|co zrobić|jak zdobyć|jak ukończyć|gdzie znaleźć|gdzie znalezc)\b/i;
 const GUIDE_SEO_TITLE_EN = /^how to\b/i;
+const QUIZ_SEO_TITLE_PL = /^(zagadki|quiz|test wiedzy)\b/i;
+const QUIZ_SEO_TITLE_EN = /^(quiz|trivia|test)\b/i;
 
 const MIN_HIGHLIGHT_LENGTH = 25;
 
@@ -195,7 +199,8 @@ export function normalizeGeneratedArticle(
       format === "community" ||
       format === "essay" ||
       format === "synthesis" ||
-      format === "guide") &&
+      format === "guide" ||
+      format === "quiz") &&
     (!item.highlights || item.highlights.length < 3)
   ) {
     return null;
@@ -231,6 +236,15 @@ export function normalizeGeneratedArticle(
     ) {
       return null;
     }
+  }
+
+  if (format === "quiz") {
+    const seo = item.seo_title.trim();
+    if (locale === "pl" && !QUIZ_SEO_TITLE_PL.test(seo)) return null;
+    if (locale === "en" && !QUIZ_SEO_TITLE_EN.test(seo)) return null;
+    if (!item.highlights || item.highlights.length < 5) return null;
+    if (!item.body || !/^##\s+/m.test(item.body)) return null;
+    if (/interaktywność|łączą fanów|łączy fanów/i.test(item.lead)) return null;
   }
 
   if (format === "community" && !item.context_note) {

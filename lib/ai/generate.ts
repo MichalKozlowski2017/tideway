@@ -10,9 +10,14 @@ import {
   buildDigestPrompt,
   buildSingleArticlePrompt,
   buildSynthesisPrompt,
+  buildTrendArticlePrompt,
   type PromptItem,
 } from "@/lib/ai/prompts";
 import { QUALITY_MIN_SCORE, scoreArticleQuality } from "@/lib/ai/quality-gate";
+import {
+  detectSearchIntent,
+  formatForSearchIntent,
+} from "@/lib/ai/search-intent";
 import {
   digestResponseSchema,
   normalizeGeneratedArticle,
@@ -24,7 +29,9 @@ import {
   ARTICLE_SOURCE_PRIORITY,
   buildSourceLabel,
   isArticleSourceType,
+  isTrendSourceType,
 } from "@/lib/sources/source-label";
+import { buildTrendContext } from "@/lib/sources/trend-context";
 import type { Article, Category, Locale, RawItem, Source } from "@/lib/types";
 import { GENERATION_CATEGORIES } from "@/lib/types";
 import { inferArticleCategory } from "@/lib/categories/infer-category";
@@ -42,6 +49,8 @@ const GAMING_POOL_MIN = 45;
 const CATEGORY_POOL_MIN = 30;
 const AI_BATCH_SLOTS = 1;
 const GAMING_BATCH_SLOTS = 1;
+const TREND_BATCH_SLOTS = 1;
+const TREND_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -121,6 +130,24 @@ async function hasExistingArticle(
     .limit(1);
 
   return (byUrl?.length ?? 0) > 0;
+}
+
+async function hasRecentTrendArticle(
+  query: string,
+  locale: string,
+): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const base = slugify(query);
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("articles")
+    .select("id")
+    .eq("locale", locale)
+    .gte("published_at", since)
+    .or(`slug.eq.${base},slug.ilike.${base}-%`)
+    .limit(1);
+
+  return (data?.length ?? 0) > 0;
 }
 
 function sortPendingItems(items: PendingItem[]): PendingItem[] {
@@ -247,6 +274,7 @@ function selectBatch(items: PendingItem[], maxSize = BATCH_SIZE): PendingItem[] 
 
 type GenerationWork =
   | { kind: "synthesis"; items: PendingItem[] }
+  | { kind: "trend"; item: PendingItem }
   | { kind: "single"; item: PendingItem; format?: ArticleFormat };
 
 function isRssLongReadCandidate(item: PendingItem): boolean {
@@ -254,22 +282,39 @@ function isRssLongReadCandidate(item: PendingItem): boolean {
 }
 
 function pickGuaranteedLongReadFormat(item: PendingItem): ArticleFormat {
-  if (isGuideCandidate(item.title, item.description)) return "guide";
+  const intent = detectSearchIntent(item.title, item.description);
+  if (intent === "quiz") return "quiz";
+  if (intent === "guide" || isGuideCandidate(item.title, item.description)) {
+    return "guide";
+  }
   const n = item.id.charCodeAt(0) + item.id.charCodeAt(item.id.length - 1);
   return n % 2 === 0 ? "essay" : "analysis";
 }
 
-function planGenerationWork(eligible: PendingItem[]): GenerationWork[] {
+function planGenerationWork(
+  eligible: PendingItem[],
+  trendEligible: PendingItem[],
+): GenerationWork[] {
   const reserved = new Set<string>();
   const work: GenerationWork[] = [];
 
-  const cluster = findSynthesisCluster(eligible, reserved);
+  const trend = sortPendingItems(trendEligible)[0];
+  if (trend) {
+    work.push({ kind: "trend", item: trend });
+    reserved.add(trend.id);
+  }
+
+  const cluster = findSynthesisCluster(
+    eligible.filter((item) => !reserved.has(item.id)),
+    reserved,
+  );
   if (cluster) {
     work.push({ kind: "synthesis", items: cluster });
     for (const item of cluster) reserved.add(item.id);
   }
 
-  const maxSingles = cluster ? BATCH_SIZE - 1 : BATCH_SIZE;
+  const trendSlots = trend ? TREND_BATCH_SLOTS : 0;
+  const maxSingles = (cluster ? BATCH_SIZE - 1 : BATCH_SIZE) - trendSlots;
   const remaining = eligible.filter((item) => !reserved.has(item.id));
 
   let longReadItem: PendingItem | null = null;
@@ -493,11 +538,81 @@ function workItemIds(work: GenerationWork[]): Set<string> {
   for (const job of work) {
     if (job.kind === "synthesis") {
       for (const item of job.items) ids.add(item.id);
-    } else {
+    } else if (job.kind === "trend" || job.kind === "single") {
       ids.add(job.item.id);
     }
   }
   return ids;
+}
+
+async function generateAndPublishTrend(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  rawItem: PendingItem;
+  indexNowUrls: string[];
+}): Promise<{ published: boolean; tokensUsed: number }> {
+  const locale = params.rawItem.sources.locale as Locale;
+  const category = params.rawItem.sources.category as Category;
+  const query = params.rawItem.title;
+  const intent = detectSearchIntent(query, params.rawItem.description);
+  const articleFormat = formatForSearchIntent(intent, () => "story");
+
+  const { description: context } = await buildTrendContext(params.supabase, {
+    query,
+    category,
+  });
+
+  await params.supabase
+    .from("raw_items")
+    .update({ description: context })
+    .eq("id", params.rawItem.id);
+
+  const angle = pickEditorialAngle(
+    category,
+    articleFormat,
+    params.rawItem.id,
+    context.length,
+  );
+
+  console.log(
+    `→ [trend] ${query.slice(0, 70)}… [${articleFormat}, ${intent}, score ${params.rawItem.engagement_score}]`,
+  );
+
+  const { article: generatedItem, tokensUsed } = await generateArticleDraft({
+    locale,
+    category,
+    format: articleFormat,
+    buildPrompt: (strictLocale) =>
+      buildTrendArticlePrompt(
+        locale,
+        category,
+        query,
+        context,
+        articleFormat,
+        { angle, strictLocale },
+      ),
+    fallbackTitle: query,
+    sourceText: context,
+  });
+
+  if (!generatedItem) {
+    console.log("  ✗ odrzucono trend (walidacja lub jakość)");
+    await params.supabase
+      .from("raw_items")
+      .update({ status: "failed" })
+      .eq("id", params.rawItem.id);
+    return { published: false, tokensUsed };
+  }
+
+  const published = await publishArticle({
+    supabase: params.supabase,
+    locale,
+    category,
+    generatedItem,
+    rawItems: [params.rawItem],
+    indexNowUrls: params.indexNowUrls,
+  });
+
+  return { published, tokensUsed };
 }
 
 async function generateAndPublishSingle(params: {
@@ -567,6 +682,7 @@ export async function generatePendingArticles(): Promise<{
   tokensUsed: number;
   skippedTrends: number;
   skippedDuplicates: number;
+  trendArticles: number;
 }> {
   const supabase = getSupabaseAdmin();
 
@@ -580,23 +696,64 @@ export async function generatePendingArticles(): Promise<{
   if (error) throw error;
   if (!pending?.length) {
     console.log("Brak pending items — nic do wygenerowania.");
-    return { generated: 0, tokensUsed: 0, skippedTrends: 0, skippedDuplicates: 0 };
+    return {
+      generated: 0,
+      tokensUsed: 0,
+      skippedTrends: 0,
+      skippedDuplicates: 0,
+      trendArticles: 0,
+    };
   }
 
-  const pool = buildBalancedPool(pending as PendingItem[]);
-  const items = pool.filter((item) => isArticleSourceType(item.sources.type));
-
+  const allPending = pending as PendingItem[];
+  const now = Date.now();
   let skippedTrends = 0;
   let skippedDuplicates = 0;
 
-  for (const item of pending as PendingItem[]) {
-    if (!isArticleSourceType(item.sources.type)) {
+  for (const item of allPending) {
+    if (!isTrendSourceType(item.sources.type)) continue;
+    if (now - new Date(item.fetched_at).getTime() > TREND_MAX_AGE_MS) {
       await supabase
         .from("raw_items")
         .update({ status: "skipped" })
         .eq("id", item.id);
       skippedTrends += 1;
     }
+  }
+
+  const trendPending = allPending.filter(
+    (item) =>
+      isTrendSourceType(item.sources.type) &&
+      now - new Date(item.fetched_at).getTime() <= TREND_MAX_AGE_MS,
+  );
+  const articlePending = allPending.filter((item) =>
+    isArticleSourceType(item.sources.type),
+  );
+
+  const pool = buildBalancedPool(articlePending);
+  const items = pool;
+
+  const trendEligible: PendingItem[] = [];
+  for (const item of sortPendingItems(trendPending)) {
+    const locale = item.sources.locale;
+    if (await hasExistingArticle(item)) {
+      await supabase
+        .from("raw_items")
+        .update({ status: "skipped" })
+        .eq("id", item.id);
+      skippedDuplicates += 1;
+      continue;
+    }
+    if (await hasRecentTrendArticle(item.title, locale)) {
+      await supabase
+        .from("raw_items")
+        .update({ status: "skipped" })
+        .eq("id", item.id);
+      skippedDuplicates += 1;
+      continue;
+    }
+    trendEligible.push(item);
+    break;
   }
 
   const eligible: PendingItem[] = [];
@@ -612,33 +769,58 @@ export async function generatePendingArticles(): Promise<{
     eligible.push(item);
   }
 
-  const work = planGenerationWork(eligible);
+  const work = planGenerationWork(eligible, trendEligible);
 
   if (!work.length) {
-    return { generated: 0, tokensUsed: 0, skippedTrends, skippedDuplicates };
+    return {
+      generated: 0,
+      tokensUsed: 0,
+      skippedTrends,
+      skippedDuplicates,
+      trendArticles: 0,
+    };
   }
 
   const aiInBatch = work.filter(
     (job) =>
       job.kind === "single"
         ? job.item.sources.category === "ai"
-        : job.items[0]?.sources.category === "ai",
+        : job.kind === "synthesis"
+          ? job.items[0]?.sources.category === "ai"
+          : false,
   ).length;
   const longReadSlots = work.filter(
     (job) =>
       job.kind === "synthesis" ||
+      job.kind === "trend" ||
       (job.kind === "single" && job.format !== undefined),
   ).length;
   console.log(
-    `Batch: ${work.length} zadań (AI: ${aiInBatch}, długie: ${longReadSlots}, syntezy: ${work.filter((j) => j.kind === "synthesis").length}, pula: ${pool.length}, eligible: ${eligible.length})…`,
+    `Batch: ${work.length} zadań (trendy: ${work.filter((j) => j.kind === "trend").length}, AI: ${aiInBatch}, długie: ${longReadSlots}, syntezy: ${work.filter((j) => j.kind === "synthesis").length}, pula: ${pool.length}, eligible: ${eligible.length})…`,
   );
 
   let generated = 0;
+  let trendArticles = 0;
   let tokensUsed = 0;
   let longReadPublished = false;
   const indexNowUrls: string[] = [];
 
   for (const job of work) {
+    if (job.kind === "trend") {
+      const { published, tokensUsed: used } = await generateAndPublishTrend({
+        supabase,
+        rawItem: job.item,
+        indexNowUrls,
+      });
+      tokensUsed += used;
+      if (published) {
+        generated += 1;
+        trendArticles += 1;
+        longReadPublished = true;
+      }
+      continue;
+    }
+
     if (job.kind === "synthesis") {
       const rawItems = job.items;
       const locale = rawItems[0].sources.locale as Locale;
@@ -725,6 +907,7 @@ export async function generatePendingArticles(): Promise<{
   const hadLongReadSlot = work.some(
     (job) =>
       job.kind === "synthesis" ||
+      job.kind === "trend" ||
       (job.kind === "single" && job.format !== undefined),
   );
 
@@ -751,7 +934,7 @@ export async function generatePendingArticles(): Promise<{
 
   await notifyIndexNow(indexNowUrls);
 
-  return { generated, tokensUsed, skippedTrends, skippedDuplicates };
+  return { generated, tokensUsed, skippedTrends, skippedDuplicates, trendArticles };
 }
 
 export async function generateDigest(

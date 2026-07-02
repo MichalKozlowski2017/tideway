@@ -5,7 +5,13 @@ export type ArticleFormat =
   | "analysis"
   | "essay"
   | "synthesis"
-  | "guide";
+  | "guide"
+  | "quiz";
+
+import {
+  detectSearchIntent,
+  formatForSearchIntent,
+} from "@/lib/ai/search-intent";
 
 const GUIDE_SIGNALS =
   /\b(jak (zdobyć|zdobyc|ukończyć|ukonczyc|odblokować|odblokowac|naprawić|naprawic|skonfigurować|skonfigurowac|zainstalować|zainstalowac|znaleźć|znalezc)|gdzie (znaleźć|znalezc|szukać|szukac)|kiedy |co zrobić|poradnik|przewodnik|krok po kroku|how to (find|get|unlock|complete|fix|install|set up)|where to (find|get)|walkthrough|step[- ]by[- ]step|unlock|complete the)\b/i;
@@ -162,13 +168,16 @@ export function resolveArticleFormat(item: {
   description?: string | null;
   sources: { type: string; category: string };
 }): ArticleFormat {
-  if (
-    item.sources.type === "rss" &&
-    isGuideCandidate(item.title, item.description)
-  ) {
-    return "guide";
-  }
-  return formatForSourceType(item.sources.type, item.sources.category);
+  const intent = detectSearchIntent(item.title, item.description);
+  return formatForSearchIntent(intent, () => {
+    if (
+      item.sources.type === "rss" &&
+      isGuideCandidate(item.title, item.description)
+    ) {
+      return "guide";
+    }
+    return formatForSourceType(item.sources.type, item.sources.category);
+  });
 }
 
 export function isLongReadFormat(format: ArticleFormat): boolean {
@@ -176,6 +185,7 @@ export function isLongReadFormat(format: ArticleFormat): boolean {
     format === "essay" ||
     format === "analysis" ||
     format === "synthesis" ||
-    format === "guide"
+    format === "guide" ||
+    format === "quiz"
   );
 }

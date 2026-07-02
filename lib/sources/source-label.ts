@@ -26,13 +26,17 @@ export function buildSourceLabel(source: Pick<Source, "type" | "config">): strin
 }
 
 export const ARTICLE_SOURCE_PRIORITY: Record<string, number> = {
+  google_trends: 0,
   hacker_news: 1,
   lobsters: 1,
   reddit: 2,
   rss: 3,
   youtube: 4,
-  google_trends: 99,
 };
+
+export function isTrendSourceType(type: string): boolean {
+  return type === "google_trends";
+}
 
 export function isArticleSourceType(type: string): boolean {
   return type !== "google_trends";

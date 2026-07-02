@@ -19,6 +19,7 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   essay: { pl: "Esej", en: "Essay" },
   synthesis: { pl: "Synteza", en: "Synthesis" },
   guide: { pl: "Poradnik", en: "Guide" },
+  quiz: { pl: "Quiz", en: "Quiz" },
 };
 
 export async function ArticleView({

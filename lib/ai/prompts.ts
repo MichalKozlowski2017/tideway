@@ -69,6 +69,15 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - slug_hint: keyword slug
 - section_titles.highlights: e.g. "W skrócie"
 - section_titles.impact: e.g. "Na co uważać"`,
+  quiz: `Format "quiz" (searchers want real questions + answers, NOT an essay about quizzes):
+- seo_title: search-query style (PL: "Zagadki …", "Quiz o …", "Test wiedzy: …") — mirror the search query. max 70 chars.
+- headline: inviting promise e.g. "10 zagadek o … — sprawdź się"
+- lead: one sentence — what the quiz tests; never "zagadki łączą fanów" / "interaktywność"
+- body: min 700 chars; section "## Pytania" then 8–10 numbered questions (1. … 2. …), each concrete and answerable from Context
+- highlights: 8–10 answers in order ("1. …", "2. …") — section_titles.highlights: "Odpowiedzi"
+- section_titles.impact: e.g. "Jak Ci poszło?"
+- why_it_matters: why this topic matters now (1–2 sentences, specific)
+- slug_hint: keyword slug matching the query`,
 };
 
 export function buildSingleArticlePrompt(
@@ -235,4 +244,57 @@ Banned phrases (never use): ${BANNED_PHRASES}
 
 Headlines to synthesize:
 ${sources.map((s, i) => `${i + 1}. ${s.headline}`).join("\n")}`;
+}
+
+export function buildTrendArticlePrompt(
+  locale: Locale,
+  category: string,
+  query: string,
+  context: string,
+  format: ArticleFormat,
+  options: PromptOptions = {},
+): string {
+  const lang = locale === "pl" ? "Polish" : "English";
+  const langRule = options.strictLocale
+    ? `CRITICAL: Every field MUST be written entirely in ${lang}.`
+    : `Write the entire article in ${lang} only.`;
+
+  const angleBlock = options.angle
+    ? `\nEditorial angle: "${options.angle}"
+${getEditorialAngleGuide(options.angle)}\n`
+    : "";
+
+  return `You are a ${lang} editor at Tideway. A rising Google search query needs a dedicated article TODAY.
+${EDITORIAL_VOICE}
+${langRule}
+${angleBlock}
+Category: ${category}
+Search query (write FOR this): ${query}
+Required format: "${format}"
+
+${FORMAT_GUIDE[format]}
+
+Fact rule: Use Context below when available. For quiz/guide, questions must be answerable from Context or well-known public facts. Do not invent obscure statistics.
+
+${HEADLINE_RULES}
+
+Return ONLY valid JSON:
+{
+  "format": "${format}",
+  "headline": "punchy on-page title",
+  "seo_title": "matches the search query intent, max 70 chars",
+  "seo_description": "max 160 chars",
+  "lead": "see format rules",
+  "body": "see format rules",
+  "highlights": ["see format rules"],
+  "section_titles": { "highlights": "custom", "impact": "custom" },
+  "why_it_matters": "2–3 specific sentences",
+  "tags": ["5 tags"],
+  "slug_hint": "url-slug from query keywords"
+}
+
+Banned phrases (never use): ${BANNED_PHRASES}
+
+Context:
+${context}`;
 }
