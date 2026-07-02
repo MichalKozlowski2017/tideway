@@ -21,6 +21,38 @@ export function isValidImageUrl(url: string | null | undefined): url is string {
   }
 }
 
+/** User profile photos from forums, dev.to, Reddit, etc. — not licensed for reuse */
+export function isProfileOrAvatarImage(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
+  try {
+    const raw = url.trim();
+    const decoded = decodeURIComponent(raw).toLowerCase();
+    const lower = raw.toLowerCase();
+
+    if (
+      lower.includes("profile_image") ||
+      decoded.includes("profile_image") ||
+      lower.includes("/user/avatar") ||
+      decoded.includes("/user/avatar")
+    ) {
+      return true;
+    }
+
+    const { hostname, pathname } = new URL(raw);
+    const host = hostname.toLowerCase();
+    const path = pathname.toLowerCase();
+
+    if (host === "avatars.githubusercontent.com") return true;
+    if (host.includes("gravatar.com")) return true;
+    if (host === "www.redditstatic.com" && path.includes("/avatars/")) return true;
+    if (host === "styles.redditmedia.com" && path.includes("avatar")) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** Auto-generated social cards (GitHub repos, etc.) — poor fit for article thumbnails */
 export function isWeakPreviewImage(url: string | null | undefined): boolean {
   if (!url?.trim()) return false;
@@ -42,7 +74,11 @@ export function isWeakPreviewImage(url: string | null | undefined): boolean {
 }
 
 export function isUsableArticleImage(url: string | null | undefined): url is string {
-  return isValidImageUrl(url) && !isWeakPreviewImage(url);
+  return (
+    isValidImageUrl(url) &&
+    !isWeakPreviewImage(url) &&
+    !isProfileOrAvatarImage(url)
+  );
 }
 
 export function pickLargestImageUrl(candidates: Array<string | undefined | null>): string | null {

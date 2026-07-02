@@ -19,7 +19,7 @@ insert into sources (type, config, category, locale, enabled) values
   ('rss', '{"feedUrl": "https://www.technologyreview.com/feed/"}', 'ai', 'pl', true),
   ('rss', '{"feedUrl": "https://www.eurogamer.net/feed"}', 'gaming', 'pl', true),
   ('rss', '{"feedUrl": "https://www.polygon.com/rss/index.xml"}', 'gaming', 'pl', true),
-  ('rss', '{"feedUrl": "https://www.benchmark.pl/rss/aktualnosci.xml"}', 'gaming', 'pl', true),
+  ('rss', '{"feedUrl": "https://www.benchmark.pl/rss/aktualnosci.xml"}', 'tech', 'pl', true),
   ('rss', '{"feedUrl": "https://dev.to/feed"}', 'it', 'pl', true),
   ('rss', '{"feedUrl": "https://www.theregister.com/headlines.atom"}', 'it', 'pl', true),
   ('rss', '{"feedUrl": "https://feeds.feedburner.com/TheHackersNews"}', 'it', 'pl', true),

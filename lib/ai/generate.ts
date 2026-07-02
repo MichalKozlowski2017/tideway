@@ -27,6 +27,7 @@ import {
 } from "@/lib/sources/source-label";
 import type { Article, Category, Locale, RawItem, Source } from "@/lib/types";
 import { GENERATION_CATEGORIES } from "@/lib/types";
+import { inferArticleCategory } from "@/lib/categories/infer-category";
 import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
 import { articlePublicUrl, notifyIndexNow } from "@/lib/seo/indexnow";
 import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
@@ -404,24 +405,48 @@ async function publishArticle(params: {
   indexNowUrls: string[];
 }): Promise<boolean> {
   const primary = params.rawItems[0];
+  const sourceCategory = params.category;
+  const category = inferArticleCategory({
+    sourceCategory,
+    sourceTitle: primary.title,
+    sourceUrl: primary.url,
+    headline: params.generatedItem.headline,
+    lead: params.generatedItem.lead,
+    tags: params.generatedItem.tags,
+  });
+  if (category !== sourceCategory) {
+    console.log(`  ↪ kategoria ${sourceCategory} → ${category}`);
+  }
+
   const baseSlug = slugify(
     params.generatedItem.slug_hint || primary.title,
   );
   const slug = await ensureUniqueSlug(params.locale, baseSlug);
 
-  const imageCandidates = params.rawItems
-    .map((item) => item.image_url)
-    .filter(Boolean);
-  const imageUrl = await resolveArticleImageUrl({
-      sourceImageUrl: imageCandidates[0],
-      pageUrl: primary.url,
-      category: params.category,
+  let imageUrl: string | null = null;
+  for (const item of params.rawItems) {
+    const candidate = await resolveArticleImageUrl({
+      sourceImageUrl: item.image_url,
+      pageUrl: item.url,
+      category,
     });
+    if (candidate) {
+      imageUrl = candidate;
+      break;
+    }
+  }
+  if (!imageUrl) {
+    imageUrl = await resolveArticleImageUrl({
+      sourceImageUrl: null,
+      pageUrl: primary.url,
+      category,
+    });
+  }
 
   const { error: articleError } = await params.supabase.from("articles").insert({
     slug,
     locale: params.locale,
-    category: params.category,
+    category,
     article_type: "trend_item",
     seo_title: params.generatedItem.seo_title,
     seo_description: params.generatedItem.seo_description,

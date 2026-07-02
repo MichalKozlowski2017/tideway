@@ -36,7 +36,7 @@ export async function resolveArticleImageUrl(params: {
     if (isUsableArticleImage(og)) return og;
   }
 
-  if (source && isValidImageUrl(source) && !isWeakPreviewImage(source)) {
+  if (source && isUsableArticleImage(source)) {
     return source;
   }
 
