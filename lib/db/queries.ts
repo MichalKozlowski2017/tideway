@@ -76,7 +76,11 @@ export async function getArticles(params: {
     .limit(params.limit ?? 20);
 
   if (params.category) query = query.eq("category", params.category);
-  if (params.articleType) query = query.eq("article_type", params.articleType);
+  if (params.articleType) {
+    query = query.eq("article_type", params.articleType);
+  } else {
+    query = query.eq("article_type", "trend_item");
+  }
 
   const { data, error } = await query;
   if (error) throw error;
@@ -169,7 +173,11 @@ export async function getArticlesPaginated(params: {
     .order("published_at", { ascending: false });
 
   if (params.category) query = query.eq("category", params.category);
-  if (params.articleType) query = query.eq("article_type", params.articleType);
+  if (params.articleType) {
+    query = query.eq("article_type", params.articleType);
+  } else {
+    query = query.eq("article_type", "trend_item");
+  }
 
   const { data, error, count } = await query.range(from, to);
   if (error) throw error;
@@ -279,6 +287,7 @@ export async function getArticlesByTag(params: {
     .select("*")
     .eq("locale", params.locale)
     .eq("is_published", true)
+    .eq("article_type", "trend_item")
     .contains("tags", [params.tag])
     .order("published_at", { ascending: false })
     .limit(params.limit ?? 24);
@@ -306,6 +315,7 @@ export async function getArticlesByTagPaginated(params: {
     .select("*", { count: "exact" })
     .eq("locale", params.locale)
     .eq("is_published", true)
+    .eq("article_type", "trend_item")
     .contains("tags", [params.tag])
     .order("published_at", { ascending: false })
     .range(from, to);

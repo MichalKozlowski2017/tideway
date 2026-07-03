@@ -25,14 +25,20 @@ export function ArticleCard({
   locale: Locale;
 }) {
   const content = parseArticleBody(article.summary);
+  const isDigest =
+    article.article_type === "daily_digest" ||
+    article.article_type === "weekly_digest";
   const snippet =
     content.body
       ?.split("\n\n")
       .find((block) => !block.trim().startsWith("## "))
       ?.replace(/^##\s+/, "")
       .slice(0, 160) ?? article.lead;
-  const formatLabel =
-    FORMAT_LABELS[content.format]?.[locale] ?? content.format;
+  const formatLabel = isDigest
+    ? locale === "pl"
+      ? "Przegląd"
+      : "Digest"
+    : (FORMAT_LABELS[content.format]?.[locale] ?? content.format);
   const categoryLabel = categoryNavLabel(
     locale,
     article.category as Category,
