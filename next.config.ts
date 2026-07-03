@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { articleSlugRedirects } from "./lib/seo/article-redirects";
 import { PRIMARY_SITE_URL } from "./lib/site";
 
 const secondaryHosts = ["tideway.eu", "www.tideway.eu", "www.tideway.pl"];
@@ -6,6 +7,7 @@ const secondaryHosts = ["tideway.eu", "www.tideway.eu", "www.tideway.pl"];
 const nextConfig: NextConfig = {
   async redirects() {
     return [
+      ...articleSlugRedirects(),
       {
         source: "/trendy/technologia",
         destination: "/trendy/tech",

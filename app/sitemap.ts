@@ -7,6 +7,8 @@ import { RSS_FEED_PATH, siteUrl } from "@/lib/site";
 
 const CATEGORIES = MAIN_CATEGORIES;
 const LOCALES = activeLocales;
+/** Tags need several articles before they earn a sitemap slot (reduces thin-door URLs). */
+const TAG_SITEMAP_MIN_COUNT = 5;
 
 /** Regenerate sitemap from DB every 5 min (matches homepage / category pages). */
 export const revalidate = 300;
@@ -35,7 +37,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (!hasSupabaseConfig()) return staticRoutes;
 
   try {
-    const slugs = await getAllArticleSlugs();
+    const slugs = (await getAllArticleSlugs()).filter((item) =>
+      LOCALES.includes(item.locale as Locale),
+    );
     const articleRoutes: MetadataRoute.Sitemap = slugs.map((item) => ({
       url: `${base}${articlePath(item.locale as Locale, item.slug)}`,
       lastModified: item.updated_at,
@@ -45,7 +49,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const tagRoutes: MetadataRoute.Sitemap = [];
     for (const locale of LOCALES) {
-      const tags = await getDistinctTags(locale, { minCount: 2 });
+      const tags = await getDistinctTags(locale, { minCount: TAG_SITEMAP_MIN_COUNT });
       for (const tag of tags) {
         tagRoutes.push({
           url: `${base}${tagPath(locale as Locale, tag.slug)}`,
