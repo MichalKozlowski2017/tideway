@@ -12,6 +12,8 @@ import {
   detectSearchIntent,
   formatForSearchIntent,
 } from "@/lib/ai/search-intent";
+import type { QuizQuestion } from "@/lib/quiz/types";
+import { parseQuizQuestions } from "@/lib/quiz/types";
 
 const GUIDE_SIGNALS =
   /\b(jak (zdobyć|zdobyc|ukończyć|ukonczyc|odblokować|odblokowac|naprawić|naprawic|skonfigurować|skonfigurowac|zainstalować|zainstalowac|znaleźć|znalezc)|gdzie (znaleźć|znalezc|szukać|szukac)|kiedy |co zrobić|poradnik|przewodnik|krok po kroku|how to (find|get|unlock|complete|fix|install|set up)|where to (find|get)|walkthrough|step[- ]by[- ]step|unlock|complete the)\b/i;
@@ -24,6 +26,7 @@ export interface ArticleBody {
   body?: string;
   highlights?: string[];
   contextNote?: string;
+  quiz?: QuizQuestion[];
   sectionTitles?: {
     highlights?: string;
     impact?: string;
@@ -122,6 +125,7 @@ export function parseArticleBody(summary: unknown): ArticleBody {
       body: s.body,
       highlights: s.highlights,
       contextNote: s.contextNote,
+      quiz: parseQuizQuestions(summary) ?? undefined,
       sectionTitles: s.sectionTitles,
     };
   }

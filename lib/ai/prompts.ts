@@ -69,12 +69,16 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - slug_hint: keyword slug
 - section_titles.highlights: e.g. "W skrócie"
 - section_titles.impact: e.g. "Na co uważać"`,
-  quiz: `Format "quiz" (searchers want real questions + answers, NOT an essay about quizzes):
-- seo_title: search-query style (PL: "Zagadki …", "Quiz o …", "Test wiedzy: …") — mirror the search query. max 70 chars.
-- headline: inviting promise e.g. "10 zagadek o … — sprawdź się"
+  quiz: `Format "quiz" — INTERACTIVE multiple-choice quiz (3 options per question, one correct):
+- seo_title: MUST contain "Quiz" or "Zagadki" (PL) — e.g. "Quiz: Anglia vs Panama 2018". max 70 chars.
+- headline: inviting promise e.g. "10 pytań o … — sprawdź się"
 - lead: one sentence — what the quiz tests; never "zagadki łączą fanów" / "interaktywność"
-- body: min 700 chars; section "## Pytania" then 8–10 numbered questions (1. … 2. …), each concrete and answerable from Context
-- highlights: 8–10 answers in order ("1. …", "2. …") — section_titles.highlights: "Odpowiedzi"
+- quiz_questions: 8–10 objects, each with:
+  • prompt: clear question (one fact per question)
+  • options: exactly 3 plausible answers — only ONE correct, two credible wrong answers (not jokes)
+  • correct_index: 0, 1, or 2 (index of the correct option in options array)
+- body: omit or leave empty — questions live in quiz_questions only
+- highlights: omit — do NOT list answers separately
 - section_titles.impact: e.g. "Jak Ci poszło?"
 - why_it_matters: why this topic matters now (1–2 sentences, specific)
 - slug_hint: keyword slug matching the query`,
@@ -120,7 +124,23 @@ Fact rule: Use ONLY facts present in Details below. Do not invent numbers, dates
 ${HEADLINE_RULES}
 
 Return ONLY valid JSON:
-{
+${
+  format === "quiz"
+    ? `{
+  "format": "quiz",
+  "headline": "...",
+  "seo_title": "Quiz: ...",
+  "seo_description": "max 160 chars",
+  "lead": "one sentence",
+  "section_titles": { "impact": "Jak Ci poszło?" },
+  "why_it_matters": "2 sentences",
+  "tags": ["5 tags"],
+  "slug_hint": "url-slug",
+  "quiz_questions": [
+    { "prompt": "question?", "options": ["wrong A", "correct", "wrong B"], "correct_index": 1 }
+  ]
+}`
+    : `{
   "format": "${format}",
   "headline": "punchy on-page title per headline rules — specific fact + hook",
   "seo_title": "calmer keyword title for Google, max 70 chars — must differ from headline",
@@ -133,6 +153,7 @@ Return ONLY valid JSON:
   "why_it_matters": "2–3 specific sentences — WHO is affected, WHAT changes, WHEN it matters — name companies, products, or user groups",
   "tags": ["5 tags"],
   "slug_hint": "url-slug"
+}`
 }
 
 Banned phrases (never use): ${BANNED_PHRASES}
@@ -279,7 +300,23 @@ Fact rule: Use Context below when available. For quiz/guide, questions must be a
 ${HEADLINE_RULES}
 
 Return ONLY valid JSON:
-{
+${
+  format === "quiz"
+    ? `{
+  "format": "quiz",
+  "headline": "...",
+  "seo_title": "Quiz: ${query.slice(0, 50)}",
+  "seo_description": "max 160 chars",
+  "lead": "one sentence",
+  "section_titles": { "impact": "Jak Ci poszło?" },
+  "why_it_matters": "2 sentences",
+  "tags": ["5 tags"],
+  "slug_hint": "url-slug from query",
+  "quiz_questions": [
+    { "prompt": "question?", "options": ["A", "B", "C"], "correct_index": 1 }
+  ]
+}`
+    : `{
   "format": "${format}",
   "headline": "punchy on-page title",
   "seo_title": "matches the search query intent, max 70 chars",
@@ -291,6 +328,7 @@ Return ONLY valid JSON:
   "why_it_matters": "2–3 specific sentences",
   "tags": ["5 tags"],
   "slug_hint": "url-slug from query keywords"
+}`
 }
 
 Banned phrases (never use): ${BANNED_PHRASES}

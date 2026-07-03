@@ -555,10 +555,18 @@ async function publishArticle(params: {
     image_url: imageUrl,
     summary: {
       format: params.generatedItem.format,
-      body: params.generatedItem.body,
-      highlights: params.generatedItem.highlights,
+      body: params.generatedItem.format === "quiz" ? undefined : params.generatedItem.body,
+      highlights:
+        params.generatedItem.format === "quiz"
+          ? undefined
+          : params.generatedItem.highlights,
       contextNote: params.generatedItem.context_note,
       sectionTitles: params.generatedItem.section_titles,
+      quiz: params.generatedItem.quiz_questions?.map((q) => ({
+        prompt: q.prompt,
+        options: q.options,
+        correctIndex: q.correct_index as 0 | 1 | 2,
+      })),
     },
     why_it_matters: params.generatedItem.why_it_matters,
     tags: params.generatedItem.tags,
@@ -1088,6 +1096,56 @@ export async function generateDigest(
   );
 
   return article as Article;
+}
+
+/** Generate one pending raw item by title match (local preview / targeted runs). */
+export async function previewGenerateByTitle(
+  titlePattern: string,
+): Promise<{
+  published: boolean;
+  slug?: string;
+  format?: ArticleFormat;
+  tokensUsed: number;
+}> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("raw_items")
+    .select("*, sources(category, locale, type, config)")
+    .eq("status", "pending")
+    .ilike("title", `%${titlePattern}%`)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    console.log(`Brak pending item pasującego do: ${titlePattern}`);
+    return { published: false, tokensUsed: 0 };
+  }
+
+  const rawItem = data as PendingItem;
+  const articleFormat = formatForHighIntentItem(rawItem);
+  const indexNowUrls: string[] = [];
+  const { published, tokensUsed } = await generateAndPublishSingle({
+    supabase,
+    rawItem,
+    articleFormat,
+    indexNowUrls,
+  });
+
+  let slug: string | undefined;
+  if (published) {
+    const { data: article } = await supabase
+      .from("articles")
+      .select("slug")
+      .eq("locale", rawItem.sources.locale)
+      .order("published_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    slug = article?.slug;
+    await notifyIndexNow(indexNowUrls);
+  }
+
+  return { published, slug, format: articleFormat, tokensUsed };
 }
 
 export async function startJob(jobType: string) {

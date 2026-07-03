@@ -8,7 +8,9 @@ import { articlePath, ui } from "@/lib/i18n/config";
 import { ArticleCard } from "@/components/article-card";
 import { ArticleImage } from "@/components/article-image";
 import { ArticleShare } from "@/components/article-share";
+import { QuizPlayer } from "@/components/quiz-player";
 import { TagLink } from "@/components/tag-link";
+import { getQuizStats } from "@/lib/quiz/stats";
 import { siteUrl } from "@/lib/site";
 
 const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
@@ -50,7 +52,11 @@ export async function ArticleView({
   const impactTitle =
     content.sectionTitles?.impact ?? t.whyItMatters;
   const shareUrl = `${siteUrl()}${articlePath(locale, article.slug)}`;
-  const longRead = isLongReadFormat(content.format);
+  const longRead = isLongReadFormat(content.format) && !content.quiz;
+  const quizStats =
+    content.quiz && content.format === "quiz"
+      ? await getQuizStats(article.id)
+      : null;
   const readTimeText = formatReadTime(
     estimateReadTimeMinutes(
       [article.lead, content.body ?? "", article.why_it_matters].join(" "),
@@ -122,10 +128,19 @@ export async function ArticleView({
         </aside>
       )}
 
-      {content.body && (
-        <section className="mt-10">
-          <ArticleBodyContent body={content.body} longRead={longRead} />
-        </section>
+      {content.quiz && content.format === "quiz" ? (
+        <QuizPlayer
+          articleId={article.id}
+          locale={locale}
+          questions={content.quiz}
+          initialStats={quizStats}
+        />
+      ) : (
+        content.body && (
+          <section className="mt-10">
+            <ArticleBodyContent body={content.body} longRead={longRead} />
+          </section>
+        )
       )}
 
       {digestItems.length > 0 && (
@@ -155,7 +170,10 @@ export async function ArticleView({
         </section>
       )}
 
-      {!isDigest && content.highlights && content.highlights.length > 0 && (
+      {!isDigest &&
+        content.highlights &&
+        content.highlights.length > 0 &&
+        content.format !== "quiz" && (
         <section className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-zinc-950/5">
           <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
             {highlightsTitle}
