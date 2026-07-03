@@ -23,8 +23,14 @@ const GUIDE_SIGNALS =
 const GUIDE_EXCLUDE =
   /\b(good deal|worth buying|worth it|recenzja|review|promocja|okazja cenowa|porównanie cen|vs\.|versus|czy warto kupić)\b/i;
 
-const LIST_SIGNALS = new RegExp(
-  String.raw`\b(top\s?\d|top\d|najleps${PL_SUFFIX}|ranking${PL_SUFFIX}|list${PL_SUFFIX}\s?\d|(\d+)\s+(naj|najlepsz${PL_SUFFIX}|sposob${PL_SUFFIX}|gier|aplikacj${PL_SUFFIX}|tip${PL_SUFFIX}|powod${PL_SUFFIX}|serwis${PL_SUFFIX})|best\s?\d|must[- ]have)\b`,
+const LIST_STRONG = new RegExp(
+  String.raw`\b(top\s?\d|top\d|najleps${PL_SUFFIX}|list${PL_SUFFIX}\s?\d|(\d+)\s+(naj|najlepsz${PL_SUFFIX}|sposob${PL_SUFFIX}|gier|aplikacj${PL_SUFFIX}|tip${PL_SUFFIX}|powod${PL_SUFFIX}|serwis${PL_SUFFIX})|best\s?\d|must[- ]have)\b`,
+  "i",
+);
+
+/** News/poll headlines that mention "ranking" but are not listicle queries. */
+const LIST_EXCLUDE = new RegExp(
+  String.raw`\b(sondaż|sondaz|sondażu|wyniki|wynik|rekord|nieufności|nieufnosci|zaufanie do|polityk|politycy|prezydent|premier|sejm|wybor|transfer|pogoda|kurs walut|inflacja|rejestracji)\b`,
   "i",
 );
 
@@ -160,7 +166,8 @@ export function isListCandidate(
 ): boolean {
   const text = `${title} ${description ?? ""}`;
   if (isGuideCandidate(title, description)) return false;
-  return LIST_SIGNALS.test(text);
+  if (LIST_EXCLUDE.test(text)) return false;
+  return LIST_STRONG.test(text);
 }
 
 export function formatForSourceType(

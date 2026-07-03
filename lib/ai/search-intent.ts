@@ -43,3 +43,42 @@ export function intentPriority(intent: SearchIntent): number {
   if (intent === "guide") return 2;
   return 0;
 }
+
+const SPORT_QUIZ_SIGNALS = new RegExp(
+  String.raw`\b(mundial|mistrzostwa|liga mistrzów|liga mistrzow|ekstraklasa|reprezentacj${PL_SUFFIX}|puchar|euro\s?\d{2,4}|champions league|derby|finał|final|mecz|meczy|bramk|strzelc|kto wygra)\b`,
+  "i",
+);
+
+export function isSportQuizCandidate(
+  title: string,
+  description?: string | null,
+): boolean {
+  if (detectSearchIntent(title, description) === "quiz") return true;
+  const text = `${title} ${description ?? ""}`;
+  return SPORT_QUIZ_SIGNALS.test(text);
+}
+
+/** Trend articles never default to story — prefer intent-matched engaging formats. */
+export function pickTrendArticleFormat(
+  query: string,
+  category: string,
+): ArticleFormat {
+  const intent = detectSearchIntent(query);
+  if (intent === "quiz") return "quiz";
+  if (intent === "list") return "list";
+  if (intent === "guide") return "guide";
+
+  switch (category) {
+    case "sport":
+      return isSportQuizCandidate(query) ? "quiz" : "guide";
+    case "gaming":
+    case "finance":
+      return isListCandidate(query) ? "list" : "guide";
+    case "ai":
+    case "tech":
+    case "it":
+      return "guide";
+    default:
+      return "guide";
+  }
+}

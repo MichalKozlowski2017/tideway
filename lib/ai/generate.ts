@@ -20,6 +20,8 @@ import {
   formatForSearchIntent,
   intentPriority,
   isHighIntentQuery,
+  isSportQuizCandidate,
+  pickTrendArticleFormat,
 } from "@/lib/ai/search-intent";
 import {
   digestResponseSchema,
@@ -56,6 +58,7 @@ const TREND_BATCH_SLOTS = 1;
 const INTENT_BATCH_SLOTS = 1;
 const TREND_CANDIDATE_LIMIT = 12;
 const TREND_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+const MIN_TREND_CONTEXT_MATCHES = 1;
 const CLICKABLE_CATEGORIES = new Set<Category>(["sport", "gaming"]);
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
@@ -154,6 +157,26 @@ async function hasRecentTrendArticle(
     .limit(1);
 
   return (data?.length ?? 0) > 0;
+}
+
+async function hasQuizPublishedToday(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  locale: Locale,
+): Promise<boolean> {
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  const { data } = await supabase
+    .from("articles")
+    .select("summary")
+    .eq("locale", locale)
+    .eq("article_type", "trend_item")
+    .gte("published_at", start.toISOString())
+    .limit(30);
+
+  return (data ?? []).some((row) => {
+    const summary = row.summary as { format?: string; quiz?: unknown[] } | null;
+    return summary?.format === "quiz" || (summary?.quiz?.length ?? 0) > 0;
+  });
 }
 
 function sortPendingItems(items: PendingItem[]): PendingItem[] {
@@ -280,7 +303,7 @@ function selectBatch(items: PendingItem[], maxSize = BATCH_SIZE): PendingItem[] 
 
 type GenerationWork =
   | { kind: "synthesis"; items: PendingItem[] }
-  | { kind: "trend"; item: PendingItem }
+  | { kind: "trend"; item: PendingItem; format?: ArticleFormat }
   | { kind: "single"; item: PendingItem; format?: ArticleFormat };
 
 function isRssLongReadCandidate(item: PendingItem): boolean {
@@ -330,21 +353,43 @@ function pickHighIntentItem(items: PendingItem[]): PendingItem | null {
   })[0];
 }
 
-function pickBestTrendItem(items: PendingItem[]): PendingItem | null {
+function pickBestTrendItem(
+  items: PendingItem[],
+  options?: { preferSportQuiz?: boolean },
+): PendingItem | null {
   if (!items.length) return null;
+
+  if (options?.preferSportQuiz) {
+    const sportQuiz = items.filter(
+      (item) =>
+        item.sources.category === "sport" &&
+        isSportQuizCandidate(item.title, item.description),
+    );
+    if (sportQuiz.length) {
+      return sortPendingItems(sportQuiz)[0];
+    }
+  }
+
   return pickHighIntentItem(items) ?? sortPendingItems(items)[0];
 }
 
 function planGenerationWork(
   eligible: PendingItem[],
   trendEligible: PendingItem[],
+  options?: { preferSportQuiz?: boolean },
 ): GenerationWork[] {
   const reserved = new Set<string>();
   const work: GenerationWork[] = [];
 
-  const trend = pickBestTrendItem(trendEligible);
+  const trend = pickBestTrendItem(trendEligible, options);
   if (trend) {
-    work.push({ kind: "trend", item: trend });
+    const trendFormat =
+      options?.preferSportQuiz &&
+      trend.sources.category === "sport" &&
+      isSportQuizCandidate(trend.title, trend.description)
+        ? ("quiz" as const)
+        : undefined;
+    work.push({ kind: "trend", item: trend, format: trendFormat });
     reserved.add(trend.id);
   }
 
@@ -615,18 +660,40 @@ function workItemIds(work: GenerationWork[]): Set<string> {
 async function generateAndPublishTrend(params: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   rawItem: PendingItem;
+  formatOverride?: ArticleFormat;
   indexNowUrls: string[];
 }): Promise<{ published: boolean; tokensUsed: number }> {
   const locale = params.rawItem.sources.locale as Locale;
   const category = params.rawItem.sources.category as Category;
   const query = params.rawItem.title;
   const intent = detectSearchIntent(query, params.rawItem.description);
-  const articleFormat = formatForSearchIntent(intent, () => "story");
+  const articleFormat =
+    params.formatOverride ?? pickTrendArticleFormat(query, category);
 
-  const { description: context } = await buildTrendContext(params.supabase, {
-    query,
-    category,
-  });
+  const { description: context, matches } = await buildTrendContext(
+    params.supabase,
+    {
+      query,
+      category,
+    },
+  );
+
+  const canGenerateWithoutContext =
+    articleFormat === "quiz" ||
+    intent !== "news" ||
+    isSportQuizCandidate(query, params.rawItem.description);
+
+  if (
+    matches.length < MIN_TREND_CONTEXT_MATCHES &&
+    !canGenerateWithoutContext
+  ) {
+    console.log("  ⊘ trend bez kontekstu źródeł — skip");
+    await params.supabase
+      .from("raw_items")
+      .update({ status: "skipped" })
+      .eq("id", params.rawItem.id);
+    return { published: false, tokensUsed: 0 };
+  }
 
   await params.supabase
     .from("raw_items")
@@ -836,7 +903,10 @@ export async function generatePendingArticles(): Promise<{
     eligible.push(item);
   }
 
-  const work = planGenerationWork(eligible, trendEligible);
+  const quizPublishedToday = await hasQuizPublishedToday(supabase, "pl");
+  const work = planGenerationWork(eligible, trendEligible, {
+    preferSportQuiz: !quizPublishedToday,
+  });
 
   if (!work.length) {
     return {
@@ -883,6 +953,7 @@ export async function generatePendingArticles(): Promise<{
       const { published, tokensUsed: used } = await generateAndPublishTrend({
         supabase,
         rawItem: job.item,
+        formatOverride: job.format,
         indexNowUrls,
       });
       tokensUsed += used;
