@@ -51,6 +51,7 @@ export function pickEditorialAngle(
   if (format === "community") return undefined;
   if (format === "guide") return "practical";
   if (format === "quiz") return "practical";
+  if (format === "list") return "practical";
   if (descriptionLength < 150) return "context";
 
   const angles = CATEGORY_ANGLES[category];

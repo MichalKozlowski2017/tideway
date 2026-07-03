@@ -22,6 +22,7 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   synthesis: { pl: "Synteza", en: "Synthesis" },
   guide: { pl: "Poradnik", en: "Guide" },
   quiz: { pl: "Quiz", en: "Quiz" },
+  list: { pl: "Ranking", en: "List" },
 };
 
 export async function ArticleView({
@@ -178,7 +179,7 @@ export async function ArticleView({
           <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
             {highlightsTitle}
           </h2>
-          {content.format === "brief" ? (
+          {content.format === "brief" || content.format === "list" ? (
             <ol className="mt-4 list-decimal space-y-3 pl-5 text-zinc-700">
               {content.highlights.map((point) => (
                 <li key={point} className="pl-1 leading-relaxed">

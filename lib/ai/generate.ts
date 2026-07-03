@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import {
   isGuideCandidate,
+  isListCandidate,
   resolveArticleFormat,
   type ArticleFormat,
 } from "@/lib/ai/article-body";
@@ -289,6 +290,9 @@ function isRssLongReadCandidate(item: PendingItem): boolean {
 function pickGuaranteedLongReadFormat(item: PendingItem): ArticleFormat {
   const intent = detectSearchIntent(item.title, item.description);
   if (intent === "quiz") return "quiz";
+  if (intent === "list" || isListCandidate(item.title, item.description)) {
+    return "list";
+  }
   if (intent === "guide" || isGuideCandidate(item.title, item.description)) {
     return "guide";
   }

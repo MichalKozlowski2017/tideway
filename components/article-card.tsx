@@ -15,6 +15,7 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   synthesis: { pl: "Synteza", en: "Synthesis" },
   guide: { pl: "Poradnik", en: "Guide" },
   quiz: { pl: "Quiz", en: "Quiz" },
+  list: { pl: "Ranking", en: "List" },
 };
 
 export function ArticleCard({

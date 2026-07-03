@@ -82,6 +82,15 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - section_titles.impact: e.g. "Jak Ci poszło?"
 - why_it_matters: why this topic matters now (1–2 sentences, specific)
 - slug_hint: keyword slug matching the query`,
+  list: `Format "list" — ranked Top N listicle (high CTR for "najlepsze / top / ranking" queries):
+- seo_title: MUST include "Top", "Najlepsze", or "Ranking" + topic. max 70 chars.
+- headline: punchy promise e.g. "7 gier, które musisz znać w 2026"
+- lead: one sentence — what criteria the ranking uses; never "w tym artykule przedstawiamy"
+- highlights: 5–7 ranked items in order (#1 first) — each min 35 chars: start with the name/title, then em dash and one-line why it made the list
+- body: short intro only (2–3 paragraphs, min 250 chars) — selection criteria and context; NO numbered list in body (the ranked list lives in highlights)
+- section_titles.highlights: e.g. "Top 5", "Ranking", "Nasza lista"
+- section_titles.impact: e.g. "Co dalej?" or "Na co uważać"
+- slug_hint: keyword slug`,
 };
 
 export function buildSingleArticlePrompt(
@@ -295,7 +304,7 @@ Required format: "${format}"
 
 ${FORMAT_GUIDE[format]}
 
-Fact rule: Use Context below when available. For quiz/guide, questions must be answerable from Context or well-known public facts. Do not invent obscure statistics.
+Fact rule: Use Context below when available. For quiz/guide/list, content must be answerable from Context or well-known public facts. Do not invent obscure statistics.
 
 ${HEADLINE_RULES}
 

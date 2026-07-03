@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ArticleFormat } from "@/lib/ai/article-body";
 import { claimsSupportedBySource } from "@/lib/ai/fact-check";
 import { articleMatchesLocale } from "@/lib/ai/locale-check";
+import { PL_SUFFIX } from "@/lib/ai/pl-regex";
 
 const sectionTitlesSchema = z
   .object({
@@ -29,6 +30,7 @@ export const singleArticleResponseSchema = z.object({
     "synthesis",
     "guide",
     "quiz",
+    "list",
   ]),
   headline: z.string().min(10),
   seo_title: z.string().min(10).max(70),
@@ -123,15 +125,26 @@ const MIN_BODY: Record<ArticleFormat, number> = {
   synthesis: 1_000,
   guide: 900,
   quiz: 550,
+  list: 250,
   community: 420,
   brief: 0,
 };
 
-const GUIDE_SEO_TITLE_PL =
-  /^(jak|gdzie|kiedy|co zrobić|jak zdobyć|jak ukończyć|gdzie znaleźć|gdzie znalezc)\b/i;
+const GUIDE_SEO_TITLE_PL = new RegExp(
+  String.raw`^(jak|gdzie|kiedy|co zrob${PL_SUFFIX}|jak zdobyc${PL_SUFFIX}|jak ukończ${PL_SUFFIX}|gdzie znale[zź]${PL_SUFFIX}|gdzie szukaj${PL_SUFFIX})\b`,
+  "i",
+);
 const GUIDE_SEO_TITLE_EN = /^how to\b/i;
-const QUIZ_SEO_TITLE_PL = /\b(zagadki|quiz|test wiedzy)\b/i;
+const QUIZ_SEO_TITLE_PL = new RegExp(
+  String.raw`\b(zagadk${PL_SUFFIX}|quiz|test wiedzy)\b`,
+  "i",
+);
 const QUIZ_SEO_TITLE_EN = /\b(quiz|trivia|test)\b/i;
+const LIST_SEO_TITLE_PL = new RegExp(
+  String.raw`\b(top|najleps${PL_SUFFIX}|ranking${PL_SUFFIX}|list${PL_SUFFIX})\b`,
+  "i",
+);
+const LIST_SEO_TITLE_EN = /\b(top|best|ranking|lists?)\b/i;
 
 const MIN_HIGHLIGHT_LENGTH = 25;
 
@@ -220,6 +233,21 @@ export function normalizeGeneratedArticle(
   if (format === "brief") {
     if (!item.highlights || item.highlights.length < 3) return null;
     if (item.highlights.some((h) => h.length < 18)) return null;
+  }
+
+  if (format === "list") {
+    const seo = item.seo_title.trim();
+    if (locale === "pl" && !LIST_SEO_TITLE_PL.test(seo)) return null;
+    if (locale === "en" && !LIST_SEO_TITLE_EN.test(seo)) return null;
+    if (/w tym artykule przedstawiamy/i.test(item.lead)) return null;
+    if (
+      !item.highlights ||
+      item.highlights.length < 5 ||
+      item.highlights.length > 8
+    ) {
+      return null;
+    }
+    if (item.highlights.some((h) => h.length < 30)) return null;
   }
 
   if (

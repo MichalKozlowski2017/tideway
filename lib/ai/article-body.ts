@@ -6,12 +6,14 @@ export type ArticleFormat =
   | "essay"
   | "synthesis"
   | "guide"
-  | "quiz";
+  | "quiz"
+  | "list";
 
 import {
   detectSearchIntent,
   formatForSearchIntent,
 } from "@/lib/ai/search-intent";
+import { PL_SUFFIX } from "@/lib/ai/pl-regex";
 import type { QuizQuestion } from "@/lib/quiz/types";
 import { parseQuizQuestions } from "@/lib/quiz/types";
 
@@ -20,6 +22,11 @@ const GUIDE_SIGNALS =
 
 const GUIDE_EXCLUDE =
   /\b(good deal|worth buying|worth it|recenzja|review|promocja|okazja cenowa|porównanie cen|vs\.|versus|czy warto kupić)\b/i;
+
+const LIST_SIGNALS = new RegExp(
+  String.raw`\b(top\s?\d|top\d|najleps${PL_SUFFIX}|ranking${PL_SUFFIX}|list${PL_SUFFIX}\s?\d|(\d+)\s+(naj|najlepsz${PL_SUFFIX}|sposob${PL_SUFFIX}|gier|aplikacj${PL_SUFFIX}|tip${PL_SUFFIX}|powod${PL_SUFFIX}|serwis${PL_SUFFIX})|best\s?\d|must[- ]have)\b`,
+  "i",
+);
 
 export interface ArticleBody {
   format: ArticleFormat;
@@ -145,6 +152,15 @@ export function isGuideCandidate(
   const text = `${title} ${description ?? ""}`;
   if (GUIDE_EXCLUDE.test(text) && !GUIDE_SIGNALS.test(text)) return false;
   return GUIDE_SIGNALS.test(text);
+}
+
+export function isListCandidate(
+  title: string,
+  description?: string | null,
+): boolean {
+  const text = `${title} ${description ?? ""}`;
+  if (isGuideCandidate(title, description)) return false;
+  return LIST_SIGNALS.test(text);
 }
 
 export function formatForSourceType(
