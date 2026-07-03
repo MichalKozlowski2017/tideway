@@ -17,6 +17,8 @@ import { QUALITY_MIN_SCORE, scoreArticleQuality } from "@/lib/ai/quality-gate";
 import {
   detectSearchIntent,
   formatForSearchIntent,
+  intentPriority,
+  isHighIntentQuery,
 } from "@/lib/ai/search-intent";
 import {
   digestResponseSchema,
@@ -41,7 +43,7 @@ import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
 import { enrichDescription } from "@/lib/sources/enrich-description";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
-const BATCH_SIZE = 3;
+const BATCH_SIZE = 4;
 const PENDING_POOL_SIZE = 250;
 const PENDING_FETCH_SIZE = 500;
 const AI_POOL_MIN = 50;
@@ -50,7 +52,10 @@ const CATEGORY_POOL_MIN = 30;
 const AI_BATCH_SLOTS = 1;
 const GAMING_BATCH_SLOTS = 1;
 const TREND_BATCH_SLOTS = 1;
+const INTENT_BATCH_SLOTS = 1;
+const TREND_CANDIDATE_LIMIT = 12;
 const TREND_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+const CLICKABLE_CATEGORIES = new Set<Category>(["sport", "gaming"]);
 const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
@@ -291,6 +296,41 @@ function pickGuaranteedLongReadFormat(item: PendingItem): ArticleFormat {
   return n % 2 === 0 ? "essay" : "analysis";
 }
 
+function formatForHighIntentItem(item: PendingItem): ArticleFormat {
+  return formatForSearchIntent(
+    detectSearchIntent(item.title, item.description),
+    () => pickGuaranteedLongReadFormat(item),
+  );
+}
+
+function highIntentScore(item: PendingItem): number {
+  const intent = detectSearchIntent(item.title, item.description);
+  const categoryBoost = CLICKABLE_CATEGORIES.has(
+    item.sources.category as Category,
+  )
+    ? 2
+    : 0;
+  return intentPriority(intent) + categoryBoost;
+}
+
+function pickHighIntentItem(items: PendingItem[]): PendingItem | null {
+  const candidates = items.filter((item) =>
+    isHighIntentQuery(item.title, item.description),
+  );
+  if (!candidates.length) return null;
+
+  return [...candidates].sort((a, b) => {
+    const scoreDiff = highIntentScore(b) - highIntentScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return Number(b.engagement_score) - Number(a.engagement_score);
+  })[0];
+}
+
+function pickBestTrendItem(items: PendingItem[]): PendingItem | null {
+  if (!items.length) return null;
+  return pickHighIntentItem(items) ?? sortPendingItems(items)[0];
+}
+
 function planGenerationWork(
   eligible: PendingItem[],
   trendEligible: PendingItem[],
@@ -298,27 +338,42 @@ function planGenerationWork(
   const reserved = new Set<string>();
   const work: GenerationWork[] = [];
 
-  const trend = sortPendingItems(trendEligible)[0];
+  const trend = pickBestTrendItem(trendEligible);
   if (trend) {
     work.push({ kind: "trend", item: trend });
     reserved.add(trend.id);
   }
 
-  const cluster = findSynthesisCluster(
-    eligible.filter((item) => !reserved.has(item.id)),
-    reserved,
-  );
+  const remainingAfterTrend = eligible.filter((item) => !reserved.has(item.id));
+  const intentItem = pickHighIntentItem(remainingAfterTrend);
+  if (intentItem && work.length < BATCH_SIZE) {
+    work.push({
+      kind: "single",
+      item: intentItem,
+      format: formatForHighIntentItem(intentItem),
+    });
+    reserved.add(intentItem.id);
+  }
+
+  const cluster =
+    !intentItem &&
+    findSynthesisCluster(
+      eligible.filter((item) => !reserved.has(item.id)),
+      reserved,
+    );
   if (cluster) {
     work.push({ kind: "synthesis", items: cluster });
     for (const item of cluster) reserved.add(item.id);
   }
 
   const trendSlots = trend ? TREND_BATCH_SLOTS : 0;
-  const maxSingles = (cluster ? BATCH_SIZE - 1 : BATCH_SIZE) - trendSlots;
+  const intentSlots = intentItem ? INTENT_BATCH_SLOTS : 0;
+  const maxSingles =
+    (cluster ? BATCH_SIZE - 1 : BATCH_SIZE) - trendSlots - intentSlots;
   const remaining = eligible.filter((item) => !reserved.has(item.id));
 
   let longReadItem: PendingItem | null = null;
-  if (!cluster) {
+  if (!cluster && !intentItem) {
     const rssCandidates = sortPendingItems(
       remaining.filter(isRssLongReadCandidate),
     );
@@ -753,7 +808,7 @@ export async function generatePendingArticles(): Promise<{
       continue;
     }
     trendEligible.push(item);
-    break;
+    if (trendEligible.length >= TREND_CANDIDATE_LIMIT) break;
   }
 
   const eligible: PendingItem[] = [];
@@ -795,8 +850,14 @@ export async function generatePendingArticles(): Promise<{
       job.kind === "trend" ||
       (job.kind === "single" && job.format !== undefined),
   ).length;
+  const intentSlots = work.filter(
+    (job) =>
+      job.kind === "single" &&
+      job.format !== undefined &&
+      isHighIntentQuery(job.item.title, job.item.description),
+  ).length;
   console.log(
-    `Batch: ${work.length} zadań (trendy: ${work.filter((j) => j.kind === "trend").length}, AI: ${aiInBatch}, długie: ${longReadSlots}, syntezy: ${work.filter((j) => j.kind === "synthesis").length}, pula: ${pool.length}, eligible: ${eligible.length})…`,
+    `Batch: ${work.length} zadań (trendy: ${work.filter((j) => j.kind === "trend").length}, intencja: ${intentSlots}, AI: ${aiInBatch}, długie: ${longReadSlots}, syntezy: ${work.filter((j) => j.kind === "synthesis").length}, pula: ${pool.length}, eligible: ${eligible.length})…`,
   );
 
   let generated = 0;
@@ -913,18 +974,18 @@ export async function generatePendingArticles(): Promise<{
 
   if (!longReadPublished && hadLongReadSlot) {
     const exclude = workItemIds(work);
-    const backup = sortPendingItems(
-      eligible.filter(
-        (item) => isRssLongReadCandidate(item) && !exclude.has(item.id),
-      ),
-    )[0];
+    const backupPool = eligible.filter(
+      (item) => isRssLongReadCandidate(item) && !exclude.has(item.id),
+    );
+    const backup =
+      pickHighIntentItem(backupPool) ?? sortPendingItems(backupPool)[0];
 
     if (backup) {
       console.log("↻ backup długi materiał…");
       const { published, tokensUsed: used } = await generateAndPublishSingle({
         supabase,
         rawItem: backup,
-        articleFormat: pickGuaranteedLongReadFormat(backup),
+        articleFormat: formatForHighIntentItem(backup),
         indexNowUrls,
       });
       tokensUsed += used;
