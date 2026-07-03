@@ -123,32 +123,22 @@ async function main() {
       if (a.locale !== b.locale || a.category !== b.category) continue;
       if (toUnpublish.has(a.id) || toUnpublish.has(b.id)) continue;
 
-      const aSource = a.source_item_ids?.[0]
-        ? sourceMeta.get(a.source_item_ids[0])?.title
-        : undefined;
-      const bSource = b.source_item_ids?.[0]
-        ? sourceMeta.get(b.source_item_ids[0])?.title
-        : undefined;
+      const aSourceId = a.source_item_ids?.[0];
+      const bSourceId = b.source_item_ids?.[0];
+      if (!aSourceId || !bSourceId || aSourceId === bSourceId) continue;
 
-      const texts = [
-        [a.headline, b.headline],
-        [a.headline, bSource ?? ""],
-        [aSource ?? "", b.headline],
-        [aSource ?? "", bSource ?? ""],
-      ];
+      const aSource = sourceMeta.get(aSourceId)?.title;
+      const bSource = sourceMeta.get(bSourceId)?.title;
+      if (!aSource || !bSource) continue;
 
-      const similar = texts.some(
-        ([left, right]) =>
-          left && right && titleSimilarity(left, right) >= SIMILAR_THRESHOLD,
-      );
-      if (!similar) continue;
+      if (titleSimilarity(aSource, bSource) < SIMILAR_THRESHOLD) continue;
 
       const keeper = pickKeeper([a, b]);
       const drop = keeper.id === a.id ? b : a;
       toUnpublish.add(drop.id);
       reasons.set(
         drop.id,
-        `similar title to /${keeper.slug} (${drop.headline.slice(0, 48)}…)`,
+        `similar source story (keep /${keeper.slug})`,
       );
     }
   }

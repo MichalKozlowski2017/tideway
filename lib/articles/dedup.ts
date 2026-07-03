@@ -177,29 +177,20 @@ export async function findDuplicateArticle(
   }
 
   for (const article of recent) {
-    const textsToCompare = [article.headline, params.headline, params.sourceTitle];
-
     for (const sourceId of article.source_item_ids ?? []) {
       const source = sourceTitlesById.get(sourceId);
-      if (source) {
-        textsToCompare.push(source.title);
-        if (
-          normalizeSourceUrl(source.url) === normalizedUrl ||
-          (fingerprint && storyFingerprint(source.url) === fingerprint)
-        ) {
-          return { id: article.id, slug: article.slug };
-        }
-      }
-    }
+      if (!source) continue;
 
-    for (const text of textsToCompare) {
-      if (!text) continue;
-      if (titleSimilarity(params.sourceTitle, text) >= SIMILAR_STORY_THRESHOLD) {
+      if (
+        normalizeSourceUrl(source.url) === normalizedUrl ||
+        (fingerprint && storyFingerprint(source.url) === fingerprint)
+      ) {
         return { id: article.id, slug: article.slug };
       }
+
       if (
-        params.headline &&
-        titleSimilarity(params.headline, text) >= SIMILAR_STORY_THRESHOLD
+        titleSimilarity(params.sourceTitle, source.title) >=
+        SIMILAR_STORY_THRESHOLD
       ) {
         return { id: article.id, slug: article.slug };
       }
