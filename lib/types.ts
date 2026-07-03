@@ -30,7 +30,12 @@ export type SourceType =
   | "hacker_news"
   | "lobsters";
 
-export type RawItemStatus = "pending" | "processed" | "skipped" | "failed";
+export type RawItemStatus =
+  | "pending"
+  | "processing"
+  | "processed"
+  | "skipped"
+  | "failed";
 
 export type ArticleType =
   | "trend_item"

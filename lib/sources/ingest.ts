@@ -10,6 +10,7 @@ import { contentHash } from "@/lib/utils/hash";
 import { buildSourceLabel } from "@/lib/sources/source-label";
 import { enrichItemImageUrl } from "@/lib/sources/enrich-image";
 import { enrichDescription } from "@/lib/sources/enrich-description";
+import { hasRecentNormalizedUrl } from "@/lib/articles/dedup";
 
 async function fetchFromSource(source: Source): Promise<NormalizedItem[]> {
   switch (source.type) {
@@ -67,6 +68,11 @@ export async function ingestAllSources(): Promise<{
         .maybeSingle();
 
       if (existingHash) {
+        skipped += 1;
+        continue;
+      }
+
+      if (await hasRecentNormalizedUrl(supabase, item.url)) {
         skipped += 1;
         continue;
       }

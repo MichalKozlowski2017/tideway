@@ -39,6 +39,12 @@ import {
 import { buildTrendContext } from "@/lib/sources/trend-context";
 import type { Article, Category, Locale, RawItem, Source } from "@/lib/types";
 import { GENERATION_CATEGORIES } from "@/lib/types";
+import {
+  claimRawItems,
+  findDuplicateArticle,
+  hasExistingArticleForItem,
+  releaseRawItems,
+} from "@/lib/articles/dedup";
 import { inferArticleCategory } from "@/lib/categories/infer-category";
 import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
 import { articlePublicUrl, notifyIndexNow } from "@/lib/seo/indexnow";
@@ -115,30 +121,8 @@ async function ensureUniqueSlug(
   }
 }
 
-async function hasExistingArticle(
-  item: PendingItem,
-): Promise<boolean> {
-  const supabase = getSupabaseAdmin();
-
-  const { data: byHash } = await supabase
-    .from("raw_items")
-    .select("id")
-    .eq("content_hash", item.content_hash)
-    .eq("status", "processed")
-    .neq("id", item.id)
-    .limit(1);
-
-  if (byHash?.length) return true;
-
-  const { data: byUrl } = await supabase
-    .from("raw_items")
-    .select("id")
-    .eq("url", item.url)
-    .eq("status", "processed")
-    .neq("id", item.id)
-    .limit(1);
-
-  return (byUrl?.length ?? 0) > 0;
+async function hasExistingArticle(item: PendingItem): Promise<boolean> {
+  return hasExistingArticleForItem(getSupabaseAdmin(), item);
 }
 
 async function hasRecentTrendArticle(
@@ -555,6 +539,25 @@ async function publishArticle(params: {
 }): Promise<boolean> {
   const primary = params.rawItems[0];
   const sourceCategory = params.category;
+
+  const duplicate = await findDuplicateArticle(params.supabase, {
+    locale: params.locale,
+    category: sourceCategory,
+    rawItemIds: params.rawItems.map((item) => item.id),
+    sourceUrl: primary.url,
+    sourceTitle: primary.title,
+    headline: params.generatedItem.headline,
+  });
+  if (duplicate) {
+    console.log(`  ⊘ duplikat — już jest /${duplicate.slug}`);
+    await releaseRawItems(
+      params.supabase,
+      params.rawItems.map((item) => item.id),
+      "skipped",
+    );
+    return false;
+  }
+
   const category = inferArticleCategory({
     sourceCategory,
     sourceTitle: primary.title,
@@ -624,12 +627,11 @@ async function publishArticle(params: {
   });
 
   if (articleError) {
-    for (const item of params.rawItems) {
-      await params.supabase
-        .from("raw_items")
-        .update({ status: "failed" })
-        .eq("id", item.id);
-    }
+    await releaseRawItems(
+      params.supabase,
+      params.rawItems.map((item) => item.id),
+      "failed",
+    );
     return false;
   }
 
@@ -666,6 +668,12 @@ async function generateAndPublishTrend(params: {
   const locale = params.rawItem.sources.locale as Locale;
   const category = params.rawItem.sources.category as Category;
   const query = params.rawItem.title;
+
+  if (!(await claimRawItems(params.supabase, [params.rawItem.id]))) {
+    console.log("  ⊘ już przetwarzane lub opublikowane");
+    return { published: false, tokensUsed: 0 };
+  }
+
   const intent = detectSearchIntent(query, params.rawItem.description);
   const articleFormat =
     params.formatOverride ?? pickTrendArticleFormat(query, category);
@@ -688,10 +696,7 @@ async function generateAndPublishTrend(params: {
     !canGenerateWithoutContext
   ) {
     console.log("  ⊘ trend bez kontekstu źródeł — skip");
-    await params.supabase
-      .from("raw_items")
-      .update({ status: "skipped" })
-      .eq("id", params.rawItem.id);
+    await releaseRawItems(params.supabase, [params.rawItem.id], "skipped");
     return { published: false, tokensUsed: 0 };
   }
 
@@ -730,10 +735,7 @@ async function generateAndPublishTrend(params: {
 
   if (!generatedItem) {
     console.log("  ✗ odrzucono trend (walidacja lub jakość)");
-    await params.supabase
-      .from("raw_items")
-      .update({ status: "failed" })
-      .eq("id", params.rawItem.id);
+    await releaseRawItems(params.supabase, [params.rawItem.id], "failed");
     return { published: false, tokensUsed };
   }
 
@@ -757,6 +759,12 @@ async function generateAndPublishSingle(params: {
 }): Promise<{ published: boolean; tokensUsed: number }> {
   const locale = params.rawItem.sources.locale as Locale;
   const category = params.rawItem.sources.category as Category;
+
+  if (!(await claimRawItems(params.supabase, [params.rawItem.id]))) {
+    console.log("  ⊘ już przetwarzane lub opublikowane");
+    return { published: false, tokensUsed: 0 };
+  }
+
   const sourceText = await enrichSourceText(params.supabase, params.rawItem);
   const angle = pickEditorialAngle(
     category,
@@ -792,10 +800,11 @@ async function generateAndPublishSingle(params: {
         ? "  ✗ pominięto (źródło EN, walidacja PL)"
         : "  ✗ odrzucono (walidacja, jakość lub API)",
     );
-    await params.supabase
-      .from("raw_items")
-      .update({ status: skip ? "skipped" : "failed" })
-      .eq("id", params.rawItem.id);
+    await releaseRawItems(
+      params.supabase,
+      [params.rawItem.id],
+      skip ? "skipped" : "failed",
+    );
     return { published: false, tokensUsed };
   }
 
@@ -967,6 +976,12 @@ export async function generatePendingArticles(): Promise<{
 
     if (job.kind === "synthesis") {
       const rawItems = job.items;
+      const itemIds = rawItems.map((item) => item.id);
+      if (!(await claimRawItems(supabase, itemIds))) {
+        console.log("  ⊘ synteza — źródła już przetwarzane");
+        continue;
+      }
+
       const locale = rawItems[0].sources.locale as Locale;
       const category = rawItems[0].sources.category as Category;
       const articleFormat: ArticleFormat = "synthesis";
@@ -1008,12 +1023,7 @@ export async function generatePendingArticles(): Promise<{
 
       if (!generatedItem) {
         console.log("  ✗ odrzucono syntezę (walidacja lub jakość)");
-        for (const item of rawItems) {
-          await supabase
-            .from("raw_items")
-            .update({ status: "failed" })
-            .eq("id", item.id);
-        }
+        await releaseRawItems(supabase, itemIds, "failed");
         continue;
       }
 
