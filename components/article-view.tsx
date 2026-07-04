@@ -60,7 +60,11 @@ export async function ArticleView({
       : null;
   const readTimeText = formatReadTime(
     estimateReadTimeMinutes(
-      [article.lead, content.body ?? "", article.why_it_matters].join(" "),
+      [
+        article.lead,
+        content.body ?? "",
+        isDigest ? "" : article.why_it_matters,
+      ].join(" "),
       locale,
     ),
     locale,
@@ -147,7 +151,7 @@ export async function ArticleView({
       {digestItems.length > 0 && (
         <section className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-zinc-950/5">
           <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
-            {highlightsTitle}
+            {t.digestKeyPoints}
           </h2>
           <ul className="mt-4 space-y-3">
             {digestItems.map((item) => (
@@ -202,22 +206,24 @@ export async function ArticleView({
         </section>
       )}
 
-      <section
-        className={
-          longRead
-            ? "mt-10 rounded-2xl bg-blue-50/60 px-6 py-6 ring-1 ring-blue-100"
-            : content.format === "analysis"
-              ? "mt-8 rounded-2xl bg-blue-50/60 px-6 py-6 ring-1 ring-blue-100"
-              : "mt-10"
-        }
-      >
-        <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
-          {impactTitle}
-        </h2>
-        <p className="mt-3 leading-relaxed text-zinc-700">
-          {article.why_it_matters}
-        </p>
-      </section>
+      {!isDigest && (
+        <section
+          className={
+            longRead
+              ? "mt-10 rounded-2xl bg-blue-50/60 px-6 py-6 ring-1 ring-blue-100"
+              : content.format === "analysis"
+                ? "mt-8 rounded-2xl bg-blue-50/60 px-6 py-6 ring-1 ring-blue-100"
+                : "mt-10"
+          }
+        >
+          <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
+            {impactTitle}
+          </h2>
+          <p className="mt-3 leading-relaxed text-zinc-700">
+            {article.why_it_matters}
+          </p>
+        </section>
+      )}
 
       {sources.length > 0 && (
         <footer className="mt-12 border-t border-zinc-200/80 pt-10">

@@ -98,6 +98,7 @@ export const ui: Record<
     dailyDigest: string;
     weeklyDigest: string;
     keyPoints: string;
+    digestKeyPoints: string;
     whyItMatters: string;
     sources: string;
     readMore: string;
@@ -136,6 +137,7 @@ export const ui: Record<
     dailyDigest: "Dzienny przegląd",
     weeklyDigest: "Tygodniowy przegląd",
     keyPoints: "Najważniejsze punkty",
+    digestKeyPoints: "Najważniejsze informacje",
     whyItMatters: "Dlaczego to ważne?",
     sources: "Źródła",
     readMore: "Czytaj więcej",
@@ -174,6 +176,7 @@ export const ui: Record<
     dailyDigest: "Daily digest",
     weeklyDigest: "Weekly digest",
     keyPoints: "Key points",
+    digestKeyPoints: "Key highlights",
     whyItMatters: "Why it matters",
     sources: "Sources",
     readMore: "Read more",
