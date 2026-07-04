@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { getArticles } from "@/lib/db/queries";
 import { ui } from "@/lib/i18n/config";
 
-export const revalidate = 300;
+export const revalidate = 600;
 
 export const metadata: Metadata = {
   title: "Tygodniowy przegląd | Tideway",

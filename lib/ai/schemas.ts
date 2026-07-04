@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ArticleFormat } from "@/lib/ai/article-body";
 import { claimsSupportedBySource } from "@/lib/ai/fact-check";
 import { articleMatchesLocale } from "@/lib/ai/locale-check";
+import { isLazyHeadline } from "@/lib/ai/headline-quality";
 import { articleMatchesTrendQuery } from "@/lib/ai/trend-quality";
 import { PL_SUFFIX } from "@/lib/ai/pl-regex";
 
@@ -214,11 +215,20 @@ export function normalizeGeneratedArticle(
 
   if (hasCommunityTemplateLead(item.lead, locale)) return null;
 
+  const format = expectedFormat ?? item.format;
+
+  if (
+    isLazyHeadline(item.headline, locale) ||
+    (["essay", "analysis", "story"].includes(format) &&
+      isLazyHeadline(item.lead, locale))
+  ) {
+    return null;
+  }
+
   if (expectedFormat && item.format !== expectedFormat) {
     return { ...item, format: expectedFormat };
   }
 
-  const format = expectedFormat ?? item.format;
   const minBody = MIN_BODY[format];
   const hasInteractiveQuiz =
     format === "quiz" &&

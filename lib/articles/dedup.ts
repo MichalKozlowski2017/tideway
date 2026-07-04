@@ -276,7 +276,8 @@ export async function hasRecentNormalizedUrl(
     .from("raw_items")
     .select("id, url")
     .gte("fetched_at", since)
-    .limit(500);
+    .order("fetched_at", { ascending: false })
+    .limit(120);
 
   for (const row of data ?? []) {
     if (normalizeSourceUrl(row.url) === normalizedUrl) return true;

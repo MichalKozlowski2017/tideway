@@ -30,6 +30,7 @@ import {
   type GeneratedArticle,
 } from "@/lib/ai/schemas";
 import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { RAW_ITEM_PLAN_COLUMNS } from "@/lib/db/article-columns";
 import {
   ARTICLE_SOURCE_PRIORITY,
   buildSourceLabel,
@@ -56,9 +57,11 @@ import {
 } from "@/lib/ai/trend-quality";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
+const RAW_ITEM_PLAN_SELECT = `${RAW_ITEM_PLAN_COLUMNS}, sources(category, locale, type, config)`;
+
 const BATCH_SIZE = 4;
 const PENDING_POOL_SIZE = 250;
-const PENDING_FETCH_SIZE = 500;
+const PENDING_FETCH_SIZE = 150;
 const AI_POOL_MIN = 50;
 const GAMING_POOL_MIN = 45;
 const CATEGORY_POOL_MIN = 30;
@@ -468,6 +471,29 @@ function toPromptItem(item: PendingItem, description: string): PromptItem {
   };
 }
 
+async function hydratePendingDescriptions(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  items: PendingItem[],
+): Promise<PendingItem[]> {
+  if (!items.length) return items;
+  const ids = [...new Set(items.map((item) => item.id))];
+  const { data, error } = await supabase
+    .from("raw_items")
+    .select("id, description")
+    .in("id", ids);
+
+  if (error) throw error;
+
+  const descriptions = new Map(
+    (data ?? []).map((row) => [row.id as string, row.description as string | null]),
+  );
+
+  return items.map((item) => ({
+    ...item,
+    description: descriptions.get(item.id) ?? item.description ?? null,
+  }));
+}
+
 async function enrichSourceText(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   rawItem: PendingItem,
@@ -868,7 +894,7 @@ export async function generatePendingArticles(): Promise<{
 
   const { data: pending, error } = await supabase
     .from("raw_items")
-    .select("*, sources(category, locale, type, config)")
+    .select(RAW_ITEM_PLAN_SELECT)
     .eq("status", "pending")
     .order("fetched_at", { ascending: false })
     .limit(PENDING_FETCH_SIZE);
@@ -885,7 +911,14 @@ export async function generatePendingArticles(): Promise<{
     };
   }
 
-  const allPending = pending as PendingItem[];
+  const allPending = (pending ?? []).map(
+    (row) =>
+      ({
+        ...row,
+        description: null,
+        external_id: "",
+      }) as unknown as PendingItem,
+  );
   const now = Date.now();
   let skippedTrends = 0;
   let skippedDuplicates = 0;
@@ -1002,11 +1035,20 @@ export async function generatePendingArticles(): Promise<{
   let longReadPublished = false;
   const indexNowUrls: string[] = [];
 
+  const workItemList: PendingItem[] = [];
+  for (const job of work) {
+    if (job.kind === "synthesis") workItemList.push(...job.items);
+    else workItemList.push(job.item);
+  }
+  const hydratedItems = await hydratePendingDescriptions(supabase, workItemList);
+  const hydratedById = new Map(hydratedItems.map((item) => [item.id, item]));
+
   for (const job of work) {
     if (job.kind === "trend") {
+      const rawItem = hydratedById.get(job.item.id) ?? job.item;
       const { published, tokensUsed: used } = await generateAndPublishTrend({
         supabase,
-        rawItem: job.item,
+        rawItem,
         formatOverride: job.format,
         indexNowUrls,
       });
@@ -1020,7 +1062,9 @@ export async function generatePendingArticles(): Promise<{
     }
 
     if (job.kind === "synthesis") {
-      const rawItems = job.items;
+      const rawItems = job.items.map(
+        (item) => hydratedById.get(item.id) ?? item,
+      );
       const itemIds = rawItems.map((item) => item.id);
       if (!(await claimRawItems(supabase, itemIds))) {
         console.log("  ⊘ synteza — źródła już przetwarzane");
@@ -1088,10 +1132,11 @@ export async function generatePendingArticles(): Promise<{
       continue;
     }
 
-    const articleFormat = job.format ?? resolveArticleFormat(job.item);
+    const rawItem = hydratedById.get(job.item.id) ?? job.item;
+    const articleFormat = job.format ?? resolveArticleFormat(rawItem);
     const { published, tokensUsed: used } = await generateAndPublishSingle({
       supabase,
-      rawItem: job.item,
+      rawItem,
       articleFormat,
       indexNowUrls,
     });
@@ -1119,11 +1164,12 @@ export async function generatePendingArticles(): Promise<{
       pickHighIntentItem(backupPool) ?? sortPendingItems(backupPool)[0];
 
     if (backup) {
+      const [hydratedBackup] = await hydratePendingDescriptions(supabase, [backup]);
       console.log("↻ backup długi materiał…");
       const { published, tokensUsed: used } = await generateAndPublishSingle({
         supabase,
-        rawItem: backup,
-        articleFormat: formatForHighIntentItem(backup),
+        rawItem: hydratedBackup,
+        articleFormat: formatForHighIntentItem(hydratedBackup),
         indexNowUrls,
       });
       tokensUsed += used;

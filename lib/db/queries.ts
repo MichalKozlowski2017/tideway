@@ -1,3 +1,9 @@
+import { cache } from "react";
+import {
+  ARTICLE_DETAIL_COLUMNS,
+  ARTICLE_FEED_COLUMNS,
+  ARTICLE_LIST_COLUMNS,
+} from "@/lib/db/article-columns";
 import {
   getSupabaseAdmin,
   getSupabasePublic,
@@ -48,13 +54,35 @@ function mapArticle(row: Record<string, unknown>): Article {
     seo_description: row.seo_description as string,
     headline: row.headline as string,
     lead: row.lead as string,
-    summary: row.summary,
-    why_it_matters: row.why_it_matters as string,
+    summary: row.summary ?? { format: "brief", highlights: [] },
+    why_it_matters: (row.why_it_matters as string) ?? "",
     tags: (row.tags as string[]) ?? [],
     source_item_ids: (row.source_item_ids as string[]) ?? [],
     published_at: row.published_at as string,
     updated_at: row.updated_at as string,
     is_published: row.is_published as boolean,
+    image_url: (row.image_url as string | null) ?? null,
+  };
+}
+
+function mapFeedArticle(row: Record<string, unknown>): Article {
+  return {
+    id: "",
+    slug: row.slug as string,
+    locale: "pl",
+    category: "",
+    article_type: "trend_item",
+    seo_title: "",
+    seo_description: (row.seo_description as string) ?? "",
+    headline: row.headline as string,
+    lead: row.lead as string,
+    summary: { format: "brief", highlights: [] },
+    why_it_matters: "",
+    tags: [],
+    source_item_ids: [],
+    published_at: row.published_at as string,
+    updated_at: row.published_at as string,
+    is_published: true,
     image_url: (row.image_url as string | null) ?? null,
   };
 }
@@ -69,7 +97,7 @@ export async function getArticles(params: {
   const client = getSupabasePublic();
   let query = client
     .from("articles")
-    .select("*")
+    .select(ARTICLE_LIST_COLUMNS)
     .eq("locale", params.locale)
     .eq("is_published", true)
     .order("published_at", { ascending: false })
@@ -91,10 +119,19 @@ export async function getArticlesForFeed(params: {
   locale: string;
   limit?: number;
 }): Promise<Article[]> {
-  return getArticles({
-    locale: params.locale,
-    limit: params.limit ?? 50,
-  });
+  if (!hasSupabaseConfig()) return [];
+  const client = getSupabasePublic();
+  const { data, error } = await client
+    .from("articles")
+    .select(ARTICLE_FEED_COLUMNS)
+    .eq("locale", params.locale)
+    .eq("is_published", true)
+    .eq("article_type", "trend_item")
+    .order("published_at", { ascending: false })
+    .limit(params.limit ?? 50);
+
+  if (error) throw error;
+  return (data ?? []).map(mapFeedArticle);
 }
 
 export async function getDigestLinkSources(params: {
@@ -167,7 +204,7 @@ export async function getArticlesPaginated(params: {
 
   let query = client
     .from("articles")
-    .select("*", { count: "exact" })
+    .select(ARTICLE_LIST_COLUMNS, { count: "exact" })
     .eq("locale", params.locale)
     .eq("is_published", true)
     .order("published_at", { ascending: false });
@@ -184,23 +221,22 @@ export async function getArticlesPaginated(params: {
   return toPaginatedResult(data, count, page, pageSize);
 }
 
-export async function getArticleBySlug(
-  locale: string,
-  slug: string,
-): Promise<Article | null> {
-  if (!hasSupabaseConfig()) return null;
-  const client = getSupabasePublic();
-  const { data, error } = await client
-    .from("articles")
-    .select("*")
-    .eq("locale", locale)
-    .eq("slug", slug)
-    .eq("is_published", true)
-    .maybeSingle();
+export const getArticleBySlug = cache(
+  async (locale: string, slug: string): Promise<Article | null> => {
+    if (!hasSupabaseConfig()) return null;
+    const client = getSupabasePublic();
+    const { data, error } = await client
+      .from("articles")
+      .select(ARTICLE_DETAIL_COLUMNS)
+      .eq("locale", locale)
+      .eq("slug", slug)
+      .eq("is_published", true)
+      .maybeSingle();
 
-  if (error) throw error;
-  return data ? mapArticle(data) : null;
-}
+    if (error) throw error;
+    return data ? mapArticle(data) : null;
+  },
+);
 
 export async function getRelatedArticles(
   article: Article,
@@ -213,13 +249,13 @@ export async function getRelatedArticles(
   if (tags.length > 0) {
     const { data, error } = await client
       .from("articles")
-      .select("*")
+      .select(ARTICLE_LIST_COLUMNS)
       .eq("locale", article.locale)
       .eq("is_published", true)
       .neq("id", article.id)
       .overlaps("tags", tags)
       .order("published_at", { ascending: false })
-      .limit(40);
+      .limit(12);
 
     if (error) throw error;
 
@@ -241,13 +277,13 @@ export async function getRelatedArticles(
     const picked = new Set(ranked.map((item) => item.id));
     const { data: fallback, error: fallbackError } = await client
       .from("articles")
-      .select("*")
+      .select(ARTICLE_LIST_COLUMNS)
       .eq("locale", article.locale)
       .eq("category", article.category)
       .eq("is_published", true)
       .neq("id", article.id)
       .order("published_at", { ascending: false })
-      .limit(limit * 2);
+      .limit(limit);
 
     if (fallbackError) throw fallbackError;
 
@@ -263,7 +299,7 @@ export async function getRelatedArticles(
 
   const { data, error } = await client
     .from("articles")
-    .select("*")
+    .select(ARTICLE_LIST_COLUMNS)
     .eq("locale", article.locale)
     .eq("category", article.category)
     .eq("is_published", true)
@@ -284,7 +320,7 @@ export async function getArticlesByTag(params: {
   const client = getSupabasePublic();
   const { data, error } = await client
     .from("articles")
-    .select("*")
+    .select(ARTICLE_LIST_COLUMNS)
     .eq("locale", params.locale)
     .eq("is_published", true)
     .eq("article_type", "trend_item")
@@ -312,7 +348,7 @@ export async function getArticlesByTagPaginated(params: {
 
   const { data, error, count } = await client
     .from("articles")
-    .select("*", { count: "exact" })
+    .select(ARTICLE_LIST_COLUMNS, { count: "exact" })
     .eq("locale", params.locale)
     .eq("is_published", true)
     .eq("article_type", "trend_item")
@@ -331,27 +367,43 @@ export async function getDistinctTags(
   if (!hasSupabaseConfig()) return [];
   const minCount = options?.minCount ?? 1;
   const client = getSupabaseAdmin();
-  const data = await fetchAllRows<{ tags: string[] }>(async (from, to) => {
-    const { data: page, error } = await client
-      .from("articles")
-      .select("tags")
-      .eq("locale", locale)
-      .eq("is_published", true)
-      .range(from, to);
-    return { data: page, error };
+
+  const { data, error } = await client.rpc("get_tag_counts", {
+    p_locale: locale,
+    p_min_count: minCount,
   });
 
-  const counts = new Map<string, number>();
-  for (const row of data ?? []) {
-    for (const tag of (row.tags as string[]) ?? []) {
-      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  if (error) {
+    // Fallback if RPC not deployed yet
+    const rows = await fetchAllRows<{ tags: string[] }>(async (from, to) => {
+      const { data: page, error: pageError } = await client
+        .from("articles")
+        .select("tags")
+        .eq("locale", locale)
+        .eq("is_published", true)
+        .eq("article_type", "trend_item")
+        .range(from, to);
+      return { data: page, error: pageError };
+    });
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      for (const tag of row.tags ?? []) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
     }
+
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, slug: tagSlug(name), count }))
+      .filter((item) => item.slug.length > 0 && item.count >= minCount)
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, locale));
   }
 
-  return [...counts.entries()]
-    .map(([name, count]) => ({ name, slug: tagSlug(name), count }))
-    .filter((item) => item.slug.length > 0 && item.count >= minCount)
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, locale));
+  return (data ?? []).map((row: { name: string; cnt: number }) => ({
+    name: row.name,
+    slug: tagSlug(row.name),
+    count: Number(row.cnt),
+  }));
 }
 
 export async function resolveTagName(
@@ -383,7 +435,7 @@ export async function getLatestJobStatus() {
   const client = getSupabaseAdmin();
   const { data } = await client
     .from("generation_jobs")
-    .select("*")
+    .select("id, job_type, status, started_at, finished_at, items_processed, error")
     .order("started_at", { ascending: false })
     .limit(5);
   return data ?? [];

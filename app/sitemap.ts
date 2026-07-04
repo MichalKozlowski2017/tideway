@@ -10,8 +10,8 @@ const LOCALES = activeLocales;
 /** Tags need several articles before they earn a sitemap slot (reduces thin-door URLs). */
 const TAG_SITEMAP_MIN_COUNT = 5;
 
-/** Regenerate sitemap from DB every 5 min (matches homepage / category pages). */
-export const revalidate = 300;
+/** Regenerate sitemap from DB hourly (reduces Supabase egress). */
+export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();

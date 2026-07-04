@@ -46,6 +46,7 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - section_titles.impact: e.g. "Efekt domina" — NOT "Kluczowe punkty analizy"`,
   essay: `Format "essay":
 - lead: compelling hook with a clear thesis — not a dry news summary
+- headline: MUST name a specific fact, person, score, or consequence — NEVER end with "Co dalej?", "Co to oznacza?", or "Co oznacza dla…?"
 - body: long-form essay, min 1000 chars; use 3–4 sections; each section is: one line "## Short section title" (title only, max ~8 words), then a blank line, then 1–2 paragraphs; final section title MUST be "## Co to znaczy dla Ciebie" (PL) or "## What this means for you" (EN)
 - highlights: 3 concise takeaways
 - section_titles.impact: creative closing-frame heading`,

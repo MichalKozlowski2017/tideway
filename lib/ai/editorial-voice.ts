@@ -4,8 +4,10 @@ export const HEADLINE_RULES = `Headline rules (headline ≠ seo_title):
 - headline and seo_title MUST be different strings.
 
 Good (PL): headline "Ugarte out. Kto zastąpi go w środku pola?" / seo_title "Kontuzja Ugarte i zmiana w składzie reprezentacji"
+Good (PL): headline "Bethell trafił 87 — Anglia ma nowego lidera w polu" / seo_title "Jacob Bethell i wynik Anglii w meczu krykieta"
 Good (PL): headline "n8n vs Zapier — kiedy darmowy plan przestaje wystarczać?" / seo_title "n8n i Zapier: porównanie planów automatyzacji"
-Bad: "Nie uwierzysz…", "Szok w…", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", vague "Nowa era…"`;
+Bad: "Nie uwierzysz…", "Szok w…", "Wszystko, co musisz wiedzieć", "Jeden prosty trik", vague "Nowa era…"
+Bad (PL): ANY headline ending with "Co dalej?", "Co to oznacza?", "Co oznacza dla…?" — name the specific stake instead (who benefits, what changes, what's at risk).`;
 
 export const EDITORIAL_VOICE = `Editorial voice:
 - Write like a sharp magazine editor (Wired / Onet hybrid tone), not a press release or SEO farm.

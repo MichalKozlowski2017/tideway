@@ -1,17 +1,16 @@
 import type { Source } from "@/lib/types";
 import type { getSupabaseAdmin } from "@/lib/db/supabase";
 
+const TREND_CONTEXT_COLUMNS =
+  "id, title, description, url, engagement_score, fetched_at, source_id";
+
 type RawItemRow = {
   id: string;
   title: string;
   description: string | null;
   url: string;
-  image_url: string | null;
   engagement_score: number;
-  published_at: string | null;
   fetched_at: string;
-  content_hash: string;
-  status: string;
   source_id: string;
   sources: Pick<Source, "category" | "locale" | "type" | "config">;
 };
@@ -42,16 +41,17 @@ export async function buildTrendContext(
 
   const { data, error } = await supabase
     .from("raw_items")
-    .select("*, sources(category, locale, type, config)")
+    .select(`${TREND_CONTEXT_COLUMNS}, sources(category, locale, type, config)`)
     .in("status", ["pending", "processed"])
     .gte("fetched_at", since)
     .order("fetched_at", { ascending: false })
-    .limit(250);
+    .limit(80);
 
   if (error) throw error;
 
-  const ranked = ((data ?? []) as RawItemRow[])
+  const ranked = ((data ?? []) as unknown as RawItemRow[])
     .filter((row) => row.sources?.type !== "google_trends")
+    .filter((row) => row.sources?.category === params.category)
     .map((row) => ({
       row,
       score:
@@ -60,7 +60,11 @@ export async function buildTrendContext(
         (row.sources?.category === params.category ? 2 : 0),
     }))
     .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || Number(b.row.engagement_score) - Number(a.row.engagement_score));
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        Number(b.row.engagement_score) - Number(a.row.engagement_score),
+    );
 
   const matches = ranked.slice(0, limit).map((entry) => entry.row);
 
@@ -74,7 +78,7 @@ export async function buildTrendContext(
   const description = matches
     .map(
       (row, index) =>
-        `Context ${index + 1} (${row.url}):\nTitle: ${row.title}\n${row.description ?? ""}`,
+        `Context ${index + 1} (${row.url}):\nTitle: ${row.title}\n${(row.description ?? "").slice(0, 800)}`,
     )
     .join("\n\n---\n\n");
 
