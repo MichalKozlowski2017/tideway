@@ -13,6 +13,7 @@ import {
   ui,
 } from "@/lib/i18n/config";
 import { categorySlug } from "@/lib/types";
+import { SiteLogo } from "@/components/site-logo";
 
 const PANEL_MS = 480;
 
@@ -138,8 +139,13 @@ export function MobileNav({ locale }: { locale: Locale }) {
           aria-hidden={!active}
         >
           <div className="border-b border-zinc-100 px-5 py-4 pr-16">
-            <p className="text-sm font-semibold text-zinc-900">{t.siteName}</p>
-            <p className="text-xs text-zinc-500">{t.menu}</p>
+            <div className="flex items-center gap-2.5">
+              <SiteLogo className="h-7 w-7 shrink-0 shadow-sm" title={t.siteName} />
+              <div>
+                <p className="text-sm font-semibold text-zinc-900">{t.siteName}</p>
+                <p className="text-xs text-zinc-500">{t.menu}</p>
+              </div>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 py-4">

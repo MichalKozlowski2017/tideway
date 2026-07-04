@@ -11,6 +11,7 @@ import {
 } from "@/lib/i18n/config";
 import { categorySlug } from "@/lib/types";
 import { MobileNav } from "@/components/mobile-nav";
+import { SiteLogo } from "@/components/site-logo";
 
 export function SiteHeader({ locale }: { locale: Locale }) {
   const t = ui[locale];
@@ -19,9 +20,7 @@ export function SiteHeader({ locale }: { locale: Locale }) {
     <header className="sticky top-0 z-110 border-b border-zinc-200/80 bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
         <Link href={homePath(locale)} className="group inline-flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-sm font-bold text-white shadow-sm">
-            T
-          </span>
+          <SiteLogo title={t.siteName} />
           <span className="min-w-0">
             <span className="block truncate text-lg font-semibold tracking-tight text-zinc-900 group-hover:text-zinc-700">
               {t.siteName}
