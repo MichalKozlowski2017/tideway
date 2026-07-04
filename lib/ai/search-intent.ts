@@ -1,8 +1,9 @@
 import type { ArticleFormat } from "@/lib/ai/article-body";
 import { isGuideCandidate, isListCandidate } from "@/lib/ai/article-body";
+import { isExplainerCandidate } from "@/lib/ai/trend-quality";
 import { PL_SUFFIX } from "@/lib/ai/pl-regex";
 
-export type SearchIntent = "quiz" | "guide" | "list" | "news";
+export type SearchIntent = "quiz" | "guide" | "list" | "explainer" | "news";
 
 const QUIZ_SIGNALS = new RegExp(
   String.raw`\b(quiz|quizy|zagadk${PL_SUFFIX}|test wiedzy|odgadnij${PL_SUFFIX}|zgadnij${PL_SUFFIX}|kto to jest|kto wygra|typy mecz${PL_SUFFIX}|typuj|who am i|guess the|guess.*star|pytania i odpowiedzi)\b`,
@@ -15,6 +16,7 @@ export function detectSearchIntent(
 ): SearchIntent {
   const text = `${title} ${description ?? ""}`;
   if (QUIZ_SIGNALS.test(text)) return "quiz";
+  if (isExplainerCandidate(title, description)) return "explainer";
   if (isGuideCandidate(title, description)) return "guide";
   if (isListCandidate(title, description)) return "list";
   return "news";
@@ -25,6 +27,7 @@ export function formatForSearchIntent(
   fallback: () => ArticleFormat,
 ): ArticleFormat {
   if (intent === "quiz") return "quiz";
+  if (intent === "explainer") return "explainer";
   if (intent === "guide") return "guide";
   if (intent === "list") return "list";
   return fallback();
@@ -39,6 +42,7 @@ export function isHighIntentQuery(
 
 export function intentPriority(intent: SearchIntent): number {
   if (intent === "quiz") return 3;
+  if (intent === "explainer") return 3;
   if (intent === "list") return 2;
   if (intent === "guide") return 2;
   return 0;
@@ -66,7 +70,10 @@ export function pickTrendArticleFormat(
   const intent = detectSearchIntent(query);
   if (intent === "quiz") return "quiz";
   if (intent === "list") return "list";
+  if (intent === "explainer") return "explainer";
   if (intent === "guide") return "guide";
+
+  if (isExplainerCandidate(query)) return "explainer";
 
   switch (category) {
     case "sport":

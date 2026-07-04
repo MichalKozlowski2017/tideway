@@ -69,6 +69,16 @@ const FORMAT_GUIDE: Record<ArticleFormat, string> = {
 - slug_hint: keyword slug
 - section_titles.highlights: e.g. "W skrócie"
 - section_titles.impact: e.g. "Na co uważać"`,
+  explainer: `Format "explainer" (direct answer to a Google search query — "co to jest X", "chat gpt", product names):
+- seo_title: MUST include the core search phrase or its natural Polish form (e.g. "Co to jest ChatGPT?", "ChatGPT — co to i jak działa"). max 70 chars.
+- headline: clear question or promise that names the topic from the search query — NOT a unrelated news headline
+- lead: sentence one MUST define or directly answer the search query — who/what it is, in plain language
+- body: min 500 chars; 2–3 "##" sections such as "## Co to jest", "## Do czego służy", "## Od czego zacząć" (adapt titles to the topic)
+- Write ONLY about the search query topic — do NOT pivot to unrelated news from Context
+- highlights: 3 concrete facts (names, numbers, dates) about THE QUERY TOPIC
+- slug_hint: keyword slug from the search query
+- section_titles.highlights: e.g. "W skrócie"
+- section_titles.impact: e.g. "Warto wiedzieć"`,
   quiz: `Format "quiz" — INTERACTIVE multiple-choice quiz (3 options per question, one correct):
 - seo_title: MUST contain "Quiz" or "Zagadki" (PL) — e.g. "Quiz: Anglia vs Panama 2018". max 70 chars.
 - headline: inviting promise e.g. "10 pytań o … — sprawdź się"
@@ -299,12 +309,17 @@ ${EDITORIAL_VOICE}
 ${langRule}
 ${angleBlock}
 Category: ${category}
-Search query (write FOR this): ${query}
+Search query (write FOR this — the article must answer THIS exact query): ${query}
 Required format: "${format}"
+
+CRITICAL trend rules:
+- The headline, seo_title, and lead MUST be about "${query}" — not a tangential news story from Context.
+- If Context mentions unrelated products or news, IGNORE them unless they directly explain the query.
+- seo_title should match how Polish users search (include key words from the query).
 
 ${FORMAT_GUIDE[format]}
 
-Fact rule: Use Context below when available. For quiz/guide/list, content must be answerable from Context or well-known public facts. Do not invent obscure statistics.
+Fact rule: Use Context when it helps explain the query. For explainer/guide/quiz/list, use well-known public facts. Do not invent obscure statistics.
 
 ${HEADLINE_RULES}
 

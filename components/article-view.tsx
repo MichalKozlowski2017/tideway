@@ -21,6 +21,7 @@ const FORMAT_LABELS: Record<string, { pl: string; en: string }> = {
   essay: { pl: "Esej", en: "Essay" },
   synthesis: { pl: "Synteza", en: "Synthesis" },
   guide: { pl: "Poradnik", en: "Guide" },
+  explainer: { pl: "Wyjaśnienie", en: "Explainer" },
   quiz: { pl: "Quiz", en: "Quiz" },
   list: { pl: "Ranking", en: "List" },
 };

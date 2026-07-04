@@ -50,6 +50,10 @@ import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/
 import { articlePublicUrl, notifyIndexNow } from "@/lib/seo/indexnow";
 import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
 import { enrichDescription } from "@/lib/sources/enrich-description";
+import {
+  articleMatchesTrendQuery,
+  isLowQualityTrendQuery,
+} from "@/lib/ai/trend-quality";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
 const BATCH_SIZE = 4;
@@ -60,7 +64,7 @@ const GAMING_POOL_MIN = 45;
 const CATEGORY_POOL_MIN = 30;
 const AI_BATCH_SLOTS = 1;
 const GAMING_BATCH_SLOTS = 1;
-const TREND_BATCH_SLOTS = 1;
+const TREND_BATCH_SLOTS = 2;
 const INTENT_BATCH_SLOTS = 1;
 const TREND_CANDIDATE_LIMIT = 12;
 const TREND_MAX_AGE_MS = 48 * 60 * 60 * 1000;
@@ -365,16 +369,26 @@ function planGenerationWork(
   const reserved = new Set<string>();
   const work: GenerationWork[] = [];
 
-  const trend = pickBestTrendItem(trendEligible, options);
-  if (trend) {
+  const trendPicks: PendingItem[] = [];
+  let trendPool = trendEligible.filter((item) => !reserved.has(item.id));
+
+  for (let slot = 0; slot < TREND_BATCH_SLOTS && work.length < BATCH_SIZE; slot++) {
+    const trend = pickBestTrendItem(trendPool, {
+      preferSportQuiz: slot === 0 && options?.preferSportQuiz,
+    });
+    if (!trend) break;
+
     const trendFormat =
       options?.preferSportQuiz &&
+      slot === 0 &&
       trend.sources.category === "sport" &&
       isSportQuizCandidate(trend.title, trend.description)
         ? ("quiz" as const)
         : undefined;
     work.push({ kind: "trend", item: trend, format: trendFormat });
     reserved.add(trend.id);
+    trendPicks.push(trend);
+    trendPool = trendPool.filter((item) => item.id !== trend.id);
   }
 
   const remainingAfterTrend = eligible.filter((item) => !reserved.has(item.id));
@@ -399,7 +413,7 @@ function planGenerationWork(
     for (const item of cluster) reserved.add(item.id);
   }
 
-  const trendSlots = trend ? TREND_BATCH_SLOTS : 0;
+  const trendSlots = trendPicks.length;
   const intentSlots = intentItem ? INTENT_BATCH_SLOTS : 0;
   const maxSingles =
     (cluster ? BATCH_SIZE - 1 : BATCH_SIZE) - trendSlots - intentSlots;
@@ -482,6 +496,7 @@ async function generateArticleDraft(params: {
   buildPrompt: (strictLocale: boolean) => string;
   fallbackTitle: string;
   sourceText: string;
+  trendQuery?: string;
 }): Promise<{ article: GeneratedArticle | null; tokensUsed: number }> {
   let tokensUsed = 0;
 
@@ -500,7 +515,10 @@ async function generateArticleDraft(params: {
       params.fallbackTitle,
       params.locale,
       params.format,
-      { sourceText: params.sourceText },
+      {
+        sourceText: params.sourceText,
+        trendQuery: params.trendQuery,
+      },
     );
 
     if (!normalized) continue;
@@ -669,6 +687,12 @@ async function generateAndPublishTrend(params: {
   const category = params.rawItem.sources.category as Category;
   const query = params.rawItem.title;
 
+  if (isLowQualityTrendQuery(query)) {
+    console.log("  ⊘ trend — niska jakość frazy");
+    await releaseRawItems(params.supabase, [params.rawItem.id], "skipped");
+    return { published: false, tokensUsed: 0 };
+  }
+
   if (!(await claimRawItems(params.supabase, [params.rawItem.id]))) {
     console.log("  ⊘ już przetwarzane lub opublikowane");
     return { published: false, tokensUsed: 0 };
@@ -688,6 +712,7 @@ async function generateAndPublishTrend(params: {
 
   const canGenerateWithoutContext =
     articleFormat === "quiz" ||
+    articleFormat === "explainer" ||
     intent !== "news" ||
     isSportQuizCandidate(query, params.rawItem.description);
 
@@ -700,16 +725,21 @@ async function generateAndPublishTrend(params: {
     return { published: false, tokensUsed: 0 };
   }
 
+  const queryFocusedContext =
+    articleFormat === "explainer"
+      ? `Search query: "${query}". Write ONLY about this topic. Do not write about unrelated news.\n\n${context}`
+      : context;
+
   await params.supabase
     .from("raw_items")
-    .update({ description: context })
+    .update({ description: queryFocusedContext })
     .eq("id", params.rawItem.id);
 
   const angle = pickEditorialAngle(
     category,
     articleFormat,
     params.rawItem.id,
-    context.length,
+    queryFocusedContext.length,
   );
 
   console.log(
@@ -725,16 +755,23 @@ async function generateAndPublishTrend(params: {
         locale,
         category,
         query,
-        context,
+        queryFocusedContext,
         articleFormat,
         { angle, strictLocale },
       ),
     fallbackTitle: query,
-    sourceText: context,
+    sourceText: queryFocusedContext,
+    trendQuery: query,
   });
 
   if (!generatedItem) {
     console.log("  ✗ odrzucono trend (walidacja lub jakość)");
+    await releaseRawItems(params.supabase, [params.rawItem.id], "failed");
+    return { published: false, tokensUsed };
+  }
+
+  if (!articleMatchesTrendQuery(query, generatedItem)) {
+    console.log("  ✗ trend nie odpowiada frazie wyszukiwania");
     await releaseRawItems(params.supabase, [params.rawItem.id], "failed");
     return { published: false, tokensUsed };
   }
@@ -878,6 +915,14 @@ export async function generatePendingArticles(): Promise<{
 
   const trendEligible: PendingItem[] = [];
   for (const item of sortPendingItems(trendPending)) {
+    if (isLowQualityTrendQuery(item.title)) {
+      await supabase
+        .from("raw_items")
+        .update({ status: "skipped" })
+        .eq("id", item.id);
+      skippedTrends += 1;
+      continue;
+    }
     const locale = item.sources.locale;
     if (await hasExistingArticle(item)) {
       await supabase

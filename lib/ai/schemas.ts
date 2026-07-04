@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ArticleFormat } from "@/lib/ai/article-body";
 import { claimsSupportedBySource } from "@/lib/ai/fact-check";
 import { articleMatchesLocale } from "@/lib/ai/locale-check";
+import { articleMatchesTrendQuery } from "@/lib/ai/trend-quality";
 import { PL_SUFFIX } from "@/lib/ai/pl-regex";
 
 const sectionTitlesSchema = z
@@ -29,6 +30,7 @@ export const singleArticleResponseSchema = z.object({
     "essay",
     "synthesis",
     "guide",
+    "explainer",
     "quiz",
     "list",
   ]),
@@ -124,6 +126,7 @@ const MIN_BODY: Record<ArticleFormat, number> = {
   essay: 1_000,
   synthesis: 1_000,
   guide: 900,
+  explainer: 500,
   quiz: 550,
   list: 250,
   community: 420,
@@ -184,7 +187,7 @@ export function normalizeGeneratedArticle(
   fallbackTitle: string,
   locale: "pl" | "en" = "pl",
   expectedFormat?: ArticleFormat,
-  options?: { sourceText?: string },
+  options?: { sourceText?: string; trendQuery?: string },
 ): GeneratedArticle | null {
   const parsed = singleArticleResponseSchema.safeParse(raw);
   if (!parsed.success) return null;
@@ -255,7 +258,8 @@ export function normalizeGeneratedArticle(
       format === "community" ||
       format === "essay" ||
       format === "synthesis" ||
-      format === "guide") &&
+      format === "guide" ||
+      format === "explainer") &&
     (!item.highlights || item.highlights.length < 3)
   ) {
     return null;
@@ -272,16 +276,33 @@ export function normalizeGeneratedArticle(
   }
 
   if (
+    format === "explainer" &&
+    item.highlights?.some((h) => h.length < 18)
+  ) {
+    return null;
+  }
+
+  if (
     (format === "essay" || format === "synthesis" || format === "guide") &&
     (!item.body || !hasSubheadings(item.body))
   ) {
     return null;
   }
 
+  if (format === "explainer") {
+    const body = item.body ?? "";
+    if (/krok\s*\d+/i.test(body) || /w tym przewodniku/i.test(item.lead)) {
+      return null;
+    }
+    if (!hasSubheadings(body, 1)) return null;
+  }
+
   if (format === "guide") {
     const seo = item.seo_title.trim();
-    if (locale === "pl" && !GUIDE_SEO_TITLE_PL.test(seo)) return null;
-    if (locale === "en" && !GUIDE_SEO_TITLE_EN.test(seo)) return null;
+    if (!options?.trendQuery) {
+      if (locale === "pl" && !GUIDE_SEO_TITLE_PL.test(seo)) return null;
+      if (locale === "en" && !GUIDE_SEO_TITLE_EN.test(seo)) return null;
+    }
     const body = item.body ?? "";
     if (
       /krok\s*\d+/i.test(body) ||
@@ -315,7 +336,19 @@ export function normalizeGeneratedArticle(
   if (
     options?.sourceText &&
     format !== "quiz" &&
+    format !== "explainer" &&
     !claimsSupportedBySource(item, options.sourceText)
+  ) {
+    return null;
+  }
+
+  if (
+    options?.trendQuery &&
+    !articleMatchesTrendQuery(options.trendQuery, {
+      headline: item.headline,
+      lead: item.lead,
+      seo_title: item.seo_title,
+    })
   ) {
     return null;
   }

@@ -1,5 +1,6 @@
 import googleTrends from "google-trends-api";
 import type { NormalizedItem, Source } from "@/lib/types";
+import { isLowQualityTrendQuery } from "@/lib/ai/trend-quality";
 
 function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -101,7 +102,10 @@ export async function fetchGoogleTrendsItems(
 
     merged.sort((a, b) => b.value - a.value);
 
-    return merged.slice(0, 12).map((item, index) =>
+    return merged
+      .filter((item) => !isLowQualityTrendQuery(item.query))
+      .slice(0, 12)
+      .map((item, index) =>
       toTrendItem(item, geo, source.category, index),
     );
   } catch {

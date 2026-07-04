@@ -6,6 +6,7 @@ export type ArticleFormat =
   | "essay"
   | "synthesis"
   | "guide"
+  | "explainer"
   | "quiz"
   | "list";
 
@@ -213,6 +214,7 @@ export function isLongReadFormat(format: ArticleFormat): boolean {
     format === "analysis" ||
     format === "synthesis" ||
     format === "guide" ||
+    format === "explainer" ||
     format === "quiz"
   );
 }
