@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { ArticleView } from "@/components/article-view";
 import { SiteHeader } from "@/components/site-header";
 import { buildArticleMetadata } from "@/lib/seo/article-metadata";
+import {
+  articleRedirectPath,
+  resolveArticleRedirectSlug,
+} from "@/lib/seo/resolve-article-redirect";
 import { articlePageJsonLd } from "@/lib/seo/json-ld";
 import { resolveDigestItems } from "@/lib/digest/resolve";
 import { getArticleBySlug, getRelatedArticles } from "@/lib/db/queries";
@@ -24,7 +28,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ArticlePage({ params }: Props) {
   const { slug } = await params;
   const article = await getArticleBySlug("pl", slug);
-  if (!article) notFound();
+  if (!article) {
+    const target = await resolveArticleRedirectSlug("pl", slug);
+    if (target) permanentRedirect(articleRedirectPath("pl", target));
+    notFound();
+  }
 
   const [sources, related, digestItems] = await Promise.all([
     getSourceItemsForArticle(article.source_item_ids),

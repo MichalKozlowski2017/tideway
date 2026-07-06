@@ -49,6 +49,7 @@ import {
 import { inferArticleCategory } from "@/lib/categories/infer-category";
 import { resolveArticleImageUrl, CATEGORY_FALLBACK_IMAGE } from "@/lib/articles/resolve-image";
 import { articlePublicUrl, notifyIndexNow } from "@/lib/seo/indexnow";
+import { recordArticleSlugRedirect } from "@/lib/seo/article-redirect-store";
 import { shouldSkipAfterGenerationFailure } from "@/lib/sources/locale-filter";
 import { enrichDescription } from "@/lib/sources/enrich-description";
 import {
@@ -618,6 +619,9 @@ async function publishArticle(params: {
     params.generatedItem.slug_hint || primary.title,
   );
   const slug = await ensureUniqueSlug(params.locale, baseSlug);
+  if (slug !== baseSlug) {
+    await recordArticleSlugRedirect(params.locale, baseSlug, slug);
+  }
 
   let imageUrl: string | null = null;
   for (const item of params.rawItems) {
@@ -1231,6 +1235,9 @@ export async function generateDigest(
     `${prefix}-${category}-${new Date().toISOString().slice(0, 10)}`,
   );
   const slug = await ensureUniqueSlug(locale, baseSlug);
+  if (slug !== baseSlug) {
+    await recordArticleSlugRedirect(locale, baseSlug, slug);
+  }
 
   const { data: article, error } = await supabase
     .from("articles")

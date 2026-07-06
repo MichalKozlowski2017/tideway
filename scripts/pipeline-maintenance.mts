@@ -11,6 +11,8 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
 
 import { matchesLocale } from "../lib/ai/locale-check.ts";
 import { getSupabaseAdmin } from "../lib/db/supabase.ts";
+import { recordArticleSlugRedirect } from "../lib/seo/article-redirect-store.ts";
+import { resolveArticleRedirectSlug } from "../lib/seo/resolve-article-redirect.ts";
 
 console.log("Tideway — pipeline maintenance…\n");
 
@@ -24,6 +26,23 @@ const { data: unpublished, error: unpublishedError } = await supabase
 if (unpublishedError) throw unpublishedError;
 
 if (unpublished?.length) {
+  for (const row of unpublished) {
+    const { data: article } = await supabase
+      .from("articles")
+      .select("slug")
+      .eq("id", row.id)
+      .maybeSingle();
+
+    if (!article?.slug) continue;
+
+    const target = await resolveArticleRedirectSlug("pl", article.slug, {
+      skipStatic: true,
+    });
+    if (target?.kind === "article") {
+      await recordArticleSlugRedirect("pl", article.slug, target.slug);
+    }
+  }
+
   const ids = unpublished.map((a) => a.id);
   const { error: deleteError } = await supabase
     .from("articles")

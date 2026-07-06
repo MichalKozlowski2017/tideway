@@ -17,6 +17,7 @@ import {
   storyFingerprint,
   titleSimilarity,
 } from "../lib/articles/dedup.ts";
+import { recordArticleSlugRedirect } from "../lib/seo/article-redirect-store.ts";
 
 type ArticleRow = {
   id: string;
@@ -56,6 +57,7 @@ async function main() {
   const rows = (articles ?? []) as ArticleRow[];
   const toUnpublish = new Set<string>();
   const reasons = new Map<string, string>();
+  const redirectTargets = new Map<string, string>();
 
   const bySourceId = new Map<string, ArticleRow[]>();
   for (const article of rows) {
@@ -74,6 +76,7 @@ async function main() {
     for (const article of unique) {
       if (article.id === keeper.id) continue;
       toUnpublish.add(article.id);
+      redirectTargets.set(article.id, keeper.slug);
       reasons.set(
         article.id,
         `shared source_item ${sourceId.slice(0, 8)}… (keep /${keeper.slug})`,
@@ -112,6 +115,7 @@ async function main() {
     for (const article of group) {
       if (article.id === keeper.id) continue;
       toUnpublish.add(article.id);
+      redirectTargets.set(article.id, keeper.slug);
       reasons.set(article.id, `same story ${fp} (keep /${keeper.slug})`);
     }
   }
@@ -136,6 +140,7 @@ async function main() {
       const keeper = pickKeeper([a, b]);
       const drop = keeper.id === a.id ? b : a;
       toUnpublish.add(drop.id);
+      redirectTargets.set(drop.id, keeper.slug);
       reasons.set(
         drop.id,
         `similar source story (keep /${keeper.slug})`,
@@ -159,6 +164,13 @@ async function main() {
 
   if (dryRun) return;
 
+  for (const article of victims) {
+    const keeperSlug = redirectTargets.get(article.id);
+    if (keeperSlug) {
+      await recordArticleSlugRedirect("pl", article.slug, keeperSlug);
+    }
+  }
+
   const ids = victims.map((a) => a.id);
   const { error: updateError } = await supabase
     .from("articles")
@@ -167,6 +179,9 @@ async function main() {
 
   if (updateError) throw updateError;
   console.log(`\nUnpublished ${ids.length} duplicate article(s).`);
+  console.log(
+    "Run: npx tsx scripts/audit-article-404s.mts --write  (refresh 301 redirects)",
+  );
 }
 
 main().catch((err) => {
