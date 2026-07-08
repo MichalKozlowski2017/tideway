@@ -53,6 +53,15 @@ function listSummaryFromRow(row: Record<string, unknown>): unknown {
 }
 
 function mapArticle(row: Record<string, unknown>): Article {
+  const hasFullSummary =
+    row.summary != null &&
+    typeof row.summary === "object" &&
+    !Array.isArray(row.summary);
+
+  const summary = hasFullSummary
+    ? row.summary
+    : normalizeListSummary(listSummaryFromRow(row));
+
   return {
     id: row.id as string,
     slug: row.slug as string,
@@ -63,7 +72,7 @@ function mapArticle(row: Record<string, unknown>): Article {
     seo_description: row.seo_description as string,
     headline: row.headline as string,
     lead: row.lead as string,
-    summary: normalizeListSummary(listSummaryFromRow(row)),
+    summary,
     why_it_matters: (row.why_it_matters as string) ?? "",
     tags: (row.tags as string[]) ?? [],
     source_item_ids: (row.source_item_ids as string[]) ?? [],
