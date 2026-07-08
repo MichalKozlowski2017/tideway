@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import {
   isGuideCandidate,
   isListCandidate,
-  resolveArticleFormat,
+  resolveFeedArticleFormat,
   type ArticleFormat,
 } from "@/lib/ai/article-body";
 import { findSynthesisCluster } from "@/lib/ai/cluster-items";
@@ -316,10 +316,17 @@ function pickGuaranteedLongReadFormat(item: PendingItem): ArticleFormat {
 }
 
 function formatForHighIntentItem(item: PendingItem): ArticleFormat {
-  return formatForSearchIntent(
-    detectSearchIntent(item.title, item.description),
-    () => pickGuaranteedLongReadFormat(item),
-  );
+  if (item.sources.type === "google_trends") {
+    return formatForSearchIntent(
+      detectSearchIntent(item.title, item.description),
+      () => pickGuaranteedLongReadFormat(item),
+    );
+  }
+  const intent = detectSearchIntent(item.title, item.description);
+  if (intent === "quiz") return "quiz";
+  if (intent === "list") return "list";
+  if (intent === "guide") return "guide";
+  return pickGuaranteedLongReadFormat(item);
 }
 
 function highIntentScore(item: PendingItem): number {
@@ -887,6 +894,44 @@ async function generateAndPublishSingle(params: {
   return { published, tokensUsed };
 }
 
+function toLeanPendingItem(row: Record<string, unknown>): PendingItem {
+  return {
+    ...(row as unknown as PendingItem),
+    description: null,
+    external_id: "",
+  };
+}
+
+async function fetchPendingForSources(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  options: { excludeTrend?: boolean; trendOnly?: boolean; limit: number },
+): Promise<PendingItem[]> {
+  let sourceQuery = supabase.from("sources").select("id").eq("enabled", true);
+  if (options.trendOnly) {
+    sourceQuery = sourceQuery.eq("type", "google_trends");
+  } else if (options.excludeTrend) {
+    sourceQuery = sourceQuery.neq("type", "google_trends");
+  }
+
+  const { data: sources, error: sourceError } = await sourceQuery;
+  if (sourceError) throw sourceError;
+  if (!sources?.length) return [];
+
+  const { data, error } = await supabase
+    .from("raw_items")
+    .select(RAW_ITEM_PLAN_SELECT)
+    .in(
+      "source_id",
+      sources.map((row) => row.id),
+    )
+    .eq("status", "pending")
+    .order("fetched_at", { ascending: false })
+    .limit(options.limit);
+
+  if (error) throw error;
+  return (data ?? []).map((row) => toLeanPendingItem(row));
+}
+
 export async function generatePendingArticles(): Promise<{
   generated: number;
   tokensUsed: number;
@@ -896,15 +941,18 @@ export async function generatePendingArticles(): Promise<{
 }> {
   const supabase = getSupabaseAdmin();
 
-  const { data: pending, error } = await supabase
-    .from("raw_items")
-    .select(RAW_ITEM_PLAN_SELECT)
-    .eq("status", "pending")
-    .order("fetched_at", { ascending: false })
-    .limit(PENDING_FETCH_SIZE);
+  const [trendPendingRaw, articlePendingRaw] = await Promise.all([
+    fetchPendingForSources(supabase, {
+      trendOnly: true,
+      limit: TREND_CANDIDATE_LIMIT * 3,
+    }),
+    fetchPendingForSources(supabase, {
+      excludeTrend: true,
+      limit: PENDING_FETCH_SIZE,
+    }),
+  ]);
 
-  if (error) throw error;
-  if (!pending?.length) {
+  if (!trendPendingRaw.length && !articlePendingRaw.length) {
     console.log("Brak pending items — nic do wygenerowania.");
     return {
       generated: 0,
@@ -915,20 +963,11 @@ export async function generatePendingArticles(): Promise<{
     };
   }
 
-  const allPending = (pending ?? []).map(
-    (row) =>
-      ({
-        ...row,
-        description: null,
-        external_id: "",
-      }) as unknown as PendingItem,
-  );
   const now = Date.now();
   let skippedTrends = 0;
   let skippedDuplicates = 0;
 
-  for (const item of allPending) {
-    if (!isTrendSourceType(item.sources.type)) continue;
+  for (const item of trendPendingRaw) {
     if (now - new Date(item.fetched_at).getTime() > TREND_MAX_AGE_MS) {
       await supabase
         .from("raw_items")
@@ -938,14 +977,10 @@ export async function generatePendingArticles(): Promise<{
     }
   }
 
-  const trendPending = allPending.filter(
-    (item) =>
-      isTrendSourceType(item.sources.type) &&
-      now - new Date(item.fetched_at).getTime() <= TREND_MAX_AGE_MS,
+  const trendPending = trendPendingRaw.filter(
+    (item) => now - new Date(item.fetched_at).getTime() <= TREND_MAX_AGE_MS,
   );
-  const articlePending = allPending.filter((item) =>
-    isArticleSourceType(item.sources.type),
-  );
+  const articlePending = articlePendingRaw;
 
   const pool = buildBalancedPool(articlePending);
   const items = pool;
@@ -1137,7 +1172,7 @@ export async function generatePendingArticles(): Promise<{
     }
 
     const rawItem = hydratedById.get(job.item.id) ?? job.item;
-    const articleFormat = job.format ?? resolveArticleFormat(rawItem);
+    const articleFormat = job.format ?? resolveFeedArticleFormat(rawItem);
     const { published, tokensUsed: used } = await generateAndPublishSingle({
       supabase,
       rawItem,

@@ -9,6 +9,7 @@ import {
   getSupabasePublic,
   hasSupabaseConfig,
 } from "@/lib/db/supabase";
+import { normalizeListSummary } from "@/lib/ai/article-body";
 import { tagSlug } from "@/lib/tags";
 import type { Article } from "@/lib/types";
 
@@ -43,6 +44,14 @@ export type PaginatedArticles = {
   totalPages: number;
 };
 
+function listSummaryFromRow(row: Record<string, unknown>): unknown {
+  if (row.summary !== undefined && row.summary !== null) return row.summary;
+  if (row.format !== undefined && row.format !== null) {
+    return { format: row.format };
+  }
+  return undefined;
+}
+
 function mapArticle(row: Record<string, unknown>): Article {
   return {
     id: row.id as string,
@@ -54,7 +63,7 @@ function mapArticle(row: Record<string, unknown>): Article {
     seo_description: row.seo_description as string,
     headline: row.headline as string,
     lead: row.lead as string,
-    summary: row.summary ?? { format: "brief", highlights: [] },
+    summary: normalizeListSummary(listSummaryFromRow(row)),
     why_it_matters: (row.why_it_matters as string) ?? "",
     tags: (row.tags as string[]) ?? [],
     source_item_ids: (row.source_item_ids as string[]) ?? [],

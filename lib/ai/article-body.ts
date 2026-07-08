@@ -12,7 +12,7 @@ export type ArticleFormat =
 
 import {
   detectSearchIntent,
-  formatForSearchIntent,
+  pickTrendArticleFormat,
 } from "@/lib/ai/search-intent";
 import { PL_SUFFIX } from "@/lib/ai/pl-regex";
 import type { QuizQuestion } from "@/lib/quiz/types";
@@ -191,21 +191,49 @@ export function formatForSourceType(
   }
 }
 
-export function resolveArticleFormat(item: {
+/** News feeds (RSS, HN, …) — never default to explainer; reserve that for Google Trends. */
+export function resolveFeedArticleFormat(item: {
   title: string;
   description?: string | null;
   sources: { type: string; category: string };
 }): ArticleFormat {
   const intent = detectSearchIntent(item.title, item.description);
-  return formatForSearchIntent(intent, () => {
-    if (
-      item.sources.type === "rss" &&
-      isGuideCandidate(item.title, item.description)
-    ) {
-      return "guide";
-    }
-    return formatForSourceType(item.sources.type, item.sources.category);
-  });
+  if (intent === "quiz") return "quiz";
+  if (intent === "list" || isListCandidate(item.title, item.description)) {
+    return "list";
+  }
+  if (intent === "guide" || isGuideCandidate(item.title, item.description)) {
+    return "guide";
+  }
+  return formatForSourceType(item.sources.type, item.sources.category);
+}
+
+export function resolveArticleFormat(item: {
+  title: string;
+  description?: string | null;
+  sources: { type: string; category: string };
+}): ArticleFormat {
+  if (item.sources.type === "google_trends") {
+    return pickTrendArticleFormat(item.title, item.sources.category);
+  }
+  return resolveFeedArticleFormat(item);
+}
+
+export function normalizeListSummary(summary: unknown): ArticleBody {
+  if (summary && typeof summary === "object" && !Array.isArray(summary)) {
+    const s = summary as ArticleBody;
+    return {
+      format: s.format ?? "story",
+      highlights: [],
+    };
+  }
+  if (Array.isArray(summary)) {
+    return {
+      format: "brief",
+      highlights: summary.filter((x): x is string => typeof x === "string"),
+    };
+  }
+  return { format: "story", highlights: [] };
 }
 
 export function isLongReadFormat(format: ArticleFormat): boolean {

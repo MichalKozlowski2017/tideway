@@ -2,9 +2,9 @@
 export const ARTICLE_DETAIL_COLUMNS =
   "id, slug, locale, category, article_type, seo_title, seo_description, headline, lead, summary, why_it_matters, tags, source_item_ids, published_at, updated_at, is_published, image_url";
 
-/** Listings, cards, related — no summary/why_it_matters (largest fields). */
+/** Listings, cards, related — format badge only (no body/highlights). */
 export const ARTICLE_LIST_COLUMNS =
-  "id, slug, locale, category, article_type, seo_title, seo_description, headline, lead, tags, source_item_ids, published_at, updated_at, is_published, image_url";
+  "id, slug, locale, category, article_type, seo_title, seo_description, headline, lead, tags, source_item_ids, published_at, updated_at, is_published, image_url, summary->format";
 
 /** RSS feed — minimal fields. */
 export const ARTICLE_FEED_COLUMNS =
