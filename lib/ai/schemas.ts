@@ -194,16 +194,39 @@ export function normalizeGeneratedArticle(
   if (!parsed.success) return null;
 
   const item = parsed.data;
-  const combined = `${item.lead} ${item.why_it_matters} ${item.body ?? ""}`;
+
+  const polishCleanup = (text: string | undefined): string | undefined => {
+    if (!text || locale !== "pl") return text;
+    return text
+      // Avoid incorrect declensions of English event names in Polish output.
+      // Prefer Polish shorthand used commonly in sports coverage.
+      .replace(/\b(FIFA\s+)?World\s+Cup(a|ie|u|em|ów|ami)?\b/gi, "MŚ")
+      .replace(/\bWorld\s+Cup\b/gi, "MŚ");
+  };
+
+  const itemCleaned: GeneratedArticle = {
+    ...item,
+    headline: polishCleanup(item.headline) ?? item.headline,
+    seo_title: polishCleanup(item.seo_title) ?? item.seo_title,
+    seo_description: polishCleanup(item.seo_description) ?? item.seo_description,
+    lead: polishCleanup(item.lead) ?? item.lead,
+    body: polishCleanup(item.body),
+    why_it_matters: polishCleanup(item.why_it_matters) ?? item.why_it_matters,
+    context_note: polishCleanup(item.context_note),
+    highlights: item.highlights?.map((h) => polishCleanup(h) ?? h),
+    slug_hint: polishCleanup(item.slug_hint) ?? item.slug_hint,
+  };
+
+  const combined = `${itemCleaned.lead} ${itemCleaned.why_it_matters} ${itemCleaned.body ?? ""}`;
   if (isGenericContent(combined, locale)) return null;
 
   if (
     !articleMatchesLocale(
       {
-        headline: item.headline,
-        lead: item.lead,
-        body: item.body,
-        why_it_matters: item.why_it_matters,
+        headline: itemCleaned.headline,
+        lead: itemCleaned.lead,
+        body: itemCleaned.body,
+        why_it_matters: itemCleaned.why_it_matters,
       },
       locale,
     )
@@ -211,56 +234,57 @@ export function normalizeGeneratedArticle(
     return null;
   }
 
-  if (hasGenericSectionTitles(item.section_titles)) return null;
+  if (hasGenericSectionTitles(itemCleaned.section_titles)) return null;
 
-  if (hasCommunityTemplateLead(item.lead, locale)) return null;
+  if (hasCommunityTemplateLead(itemCleaned.lead, locale)) return null;
 
-  const format = expectedFormat ?? item.format;
+  const format = expectedFormat ?? itemCleaned.format;
 
   if (
-    isLazyHeadline(item.headline, locale) ||
+    isLazyHeadline(itemCleaned.headline, locale) ||
     (["essay", "analysis", "story"].includes(format) &&
-      isLazyHeadline(item.lead, locale))
+      isLazyHeadline(itemCleaned.lead, locale))
   ) {
     return null;
   }
 
-  if (expectedFormat && item.format !== expectedFormat) {
-    return { ...item, format: expectedFormat };
+  if (expectedFormat && itemCleaned.format !== expectedFormat) {
+    return { ...itemCleaned, format: expectedFormat };
   }
 
   const minBody = MIN_BODY[format];
   const hasInteractiveQuiz =
     format === "quiz" &&
-    item.quiz_questions &&
-    item.quiz_questions.length >= 5;
+    itemCleaned.quiz_questions &&
+    itemCleaned.quiz_questions.length >= 5;
 
   if (
     minBody > 0 &&
     !hasInteractiveQuiz &&
-    (!item.body || item.body.length < minBody)
+    (!itemCleaned.body || itemCleaned.body.length < minBody)
   ) {
     return null;
   }
 
   if (format === "brief") {
-    if (!item.highlights || item.highlights.length < 3) return null;
-    if (item.highlights.some((h) => h.length < 18)) return null;
+    if (!itemCleaned.highlights || itemCleaned.highlights.length < 3)
+      return null;
+    if (itemCleaned.highlights.some((h) => h.length < 18)) return null;
   }
 
   if (format === "list") {
-    const seo = item.seo_title.trim();
+    const seo = itemCleaned.seo_title.trim();
     if (locale === "pl" && !LIST_SEO_TITLE_PL.test(seo)) return null;
     if (locale === "en" && !LIST_SEO_TITLE_EN.test(seo)) return null;
-    if (/w tym artykule przedstawiamy/i.test(item.lead)) return null;
+    if (/w tym artykule przedstawiamy/i.test(itemCleaned.lead)) return null;
     if (
-      !item.highlights ||
-      item.highlights.length < 5 ||
-      item.highlights.length > 8
+      !itemCleaned.highlights ||
+      itemCleaned.highlights.length < 5 ||
+      itemCleaned.highlights.length > 8
     ) {
       return null;
     }
-    if (item.highlights.some((h) => h.length < 30)) return null;
+    if (itemCleaned.highlights.some((h) => h.length < 30)) return null;
   }
 
   if (
@@ -270,7 +294,7 @@ export function normalizeGeneratedArticle(
       format === "synthesis" ||
       format === "guide" ||
       format === "explainer") &&
-    (!item.highlights || item.highlights.length < 3)
+    (!itemCleaned.highlights || itemCleaned.highlights.length < 3)
   ) {
     return null;
   }
@@ -280,44 +304,47 @@ export function normalizeGeneratedArticle(
       format === "essay" ||
       format === "synthesis" ||
       format === "guide") &&
-    item.highlights?.some((h) => h.length < MIN_HIGHLIGHT_LENGTH)
+    itemCleaned.highlights?.some((h) => h.length < MIN_HIGHLIGHT_LENGTH)
   ) {
     return null;
   }
 
   if (
     format === "explainer" &&
-    item.highlights?.some((h) => h.length < 18)
+    itemCleaned.highlights?.some((h) => h.length < 18)
   ) {
     return null;
   }
 
   if (
     (format === "essay" || format === "synthesis" || format === "guide") &&
-    (!item.body || !hasSubheadings(item.body))
+    (!itemCleaned.body || !hasSubheadings(itemCleaned.body))
   ) {
     return null;
   }
 
   if (format === "explainer") {
-    const body = item.body ?? "";
-    if (/krok\s*\d+/i.test(body) || /w tym przewodniku/i.test(item.lead)) {
+    const body = itemCleaned.body ?? "";
+    if (
+      /krok\s*\d+/i.test(body) ||
+      /w tym przewodniku/i.test(itemCleaned.lead)
+    ) {
       return null;
     }
     if (!hasSubheadings(body, 1)) return null;
   }
 
   if (format === "guide") {
-    const seo = item.seo_title.trim();
+    const seo = itemCleaned.seo_title.trim();
     if (!options?.trendQuery) {
       if (locale === "pl" && !GUIDE_SEO_TITLE_PL.test(seo)) return null;
       if (locale === "en" && !GUIDE_SEO_TITLE_EN.test(seo)) return null;
     }
-    const body = item.body ?? "";
+    const body = itemCleaned.body ?? "";
     if (
       /krok\s*\d+/i.test(body) ||
       /pierwszym krokiem/i.test(body) ||
-      /w tym przewodniku/i.test(item.lead) ||
+      /w tym przewodniku/i.test(itemCleaned.lead) ||
       /```/.test(body)
     ) {
       return null;
@@ -325,21 +352,23 @@ export function normalizeGeneratedArticle(
   }
 
   if (format === "quiz") {
-    const seo = item.seo_title.trim();
+    const seo = itemCleaned.seo_title.trim();
     if (locale === "pl" && !QUIZ_SEO_TITLE_PL.test(seo)) return null;
     if (locale === "en" && !QUIZ_SEO_TITLE_EN.test(seo)) return null;
-    if (/interaktywność|łączą fanów|łączy fanów/i.test(item.lead)) return null;
+    if (/interaktywność|łączą fanów|łączy fanów/i.test(itemCleaned.lead))
+      return null;
 
-    if (!item.quiz_questions || item.quiz_questions.length < 5) return null;
+    if (!itemCleaned.quiz_questions || itemCleaned.quiz_questions.length < 5)
+      return null;
 
-    for (const q of item.quiz_questions) {
+    for (const q of itemCleaned.quiz_questions) {
       const opts = new Set(q.options.map((o) => o.trim().toLowerCase()));
       if (opts.size < 3) return null;
       if (q.correct_index < 0 || q.correct_index > 2) return null;
     }
   }
 
-  if (format === "community" && !item.context_note) {
+  if (format === "community" && !itemCleaned.context_note) {
     return null;
   }
 
@@ -347,7 +376,7 @@ export function normalizeGeneratedArticle(
     options?.sourceText &&
     format !== "quiz" &&
     format !== "explainer" &&
-    !claimsSupportedBySource(item, options.sourceText)
+    !claimsSupportedBySource(itemCleaned, options.sourceText)
   ) {
     return null;
   }
@@ -355,19 +384,19 @@ export function normalizeGeneratedArticle(
   if (
     options?.trendQuery &&
     !articleMatchesTrendQuery(options.trendQuery, {
-      headline: item.headline,
-      lead: item.lead,
-      seo_title: item.seo_title,
+      headline: itemCleaned.headline,
+      lead: itemCleaned.lead,
+      seo_title: itemCleaned.seo_title,
     })
   ) {
     return null;
   }
 
-  if (!item.slug_hint) {
-    return { ...item, slug_hint: fallbackTitle };
+  if (!itemCleaned.slug_hint) {
+    return { ...itemCleaned, slug_hint: fallbackTitle };
   }
 
-  return item;
+  return itemCleaned;
 }
 
 const digestBulletSchema = z.object({
