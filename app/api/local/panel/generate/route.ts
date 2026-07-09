@@ -11,7 +11,8 @@ import {
   localPanelForbiddenResponse,
 } from "@/lib/utils/local-panel";
 
-export const maxDuration = 3600;
+// Vercel Pro allows 1–1800s; local `next dev` has no cap.
+export const maxDuration = 1800;
 
 export async function POST(request: NextRequest) {
   if (!isLocalPanelEnabled()) return localPanelDisabledResponse();

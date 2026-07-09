@@ -334,6 +334,48 @@ type GenerationWork =
   | { kind: "trend"; item: PendingItem; format?: ArticleFormat }
   | { kind: "single"; item: PendingItem; format?: ArticleFormat };
 
+export type GeneratePendingProgressEvent =
+  | {
+      type: "batch_planned";
+      tasks: number;
+      items: Array<{ title: string; kind: string }>;
+    }
+  | {
+      type: "task_start";
+      index: number;
+      total: number;
+      title: string;
+      kind: string;
+    }
+  | {
+      type: "task_done";
+      index: number;
+      total: number;
+      title: string;
+      published: boolean;
+      tokensUsed: number;
+    }
+  | { type: "backup_start"; title: string }
+  | {
+      type: "backup_done";
+      title: string;
+      published: boolean;
+      tokensUsed: number;
+    };
+
+function jobTitle(job: GenerationWork): string {
+  if (job.kind === "synthesis") {
+    return job.items[0]?.title ?? "Synteza źródeł";
+  }
+  return job.item.title;
+}
+
+function jobKindLabel(job: GenerationWork): string {
+  if (job.kind === "synthesis") return "synteza";
+  if (job.kind === "trend") return "trend";
+  return job.format ?? "artykuł";
+}
+
 function isRssLongReadCandidate(item: PendingItem): boolean {
   return item.sources.type === "rss";
 }
@@ -978,7 +1020,9 @@ async function fetchPendingForSources(
   return (data ?? []).map((row) => toLeanPendingItem(row));
 }
 
-export async function generatePendingArticles(): Promise<{
+export async function generatePendingArticles(options?: {
+  onProgress?: (event: GeneratePendingProgressEvent) => void;
+}): Promise<{
   generated: number;
   tokensUsed: number;
   skippedTrends: number;
@@ -1135,7 +1179,28 @@ export async function generatePendingArticles(): Promise<{
   const hydratedItems = await hydratePendingDescriptions(supabase, workItemList);
   const hydratedById = new Map(hydratedItems.map((item) => [item.id, item]));
 
+  options?.onProgress?.({
+    type: "batch_planned",
+    tasks: work.length,
+    items: work.map((job) => ({
+      title: jobTitle(job),
+      kind: jobKindLabel(job),
+    })),
+  });
+
+  let taskIndex = 0;
   for (const job of work) {
+    taskIndex += 1;
+    const title = jobTitle(job);
+    const kind = jobKindLabel(job);
+    options?.onProgress?.({
+      type: "task_start",
+      index: taskIndex,
+      total: work.length,
+      title,
+      kind,
+    });
+
     if (job.kind === "trend") {
       const rawItem = hydratedById.get(job.item.id) ?? job.item;
       const { published, tokensUsed: used } = await generateAndPublishTrend({
@@ -1150,6 +1215,14 @@ export async function generatePendingArticles(): Promise<{
         trendArticles += 1;
         longReadPublished = true;
       }
+      options?.onProgress?.({
+        type: "task_done",
+        index: taskIndex,
+        total: work.length,
+        title,
+        published,
+        tokensUsed: used,
+      });
       continue;
     }
 
@@ -1160,6 +1233,14 @@ export async function generatePendingArticles(): Promise<{
       const itemIds = rawItems.map((item) => item.id);
       if (!(await claimRawItems(supabase, itemIds))) {
         console.log("  ⊘ synteza — źródła już przetwarzane");
+        options?.onProgress?.({
+          type: "task_done",
+          index: taskIndex,
+          total: work.length,
+          title,
+          published: false,
+          tokensUsed: 0,
+        });
         continue;
       }
 
@@ -1205,22 +1286,37 @@ export async function generatePendingArticles(): Promise<{
       if (!generatedItem) {
         console.log("  ✗ odrzucono syntezę (walidacja lub jakość)");
         await releaseRawItems(supabase, itemIds, "failed");
+        options?.onProgress?.({
+          type: "task_done",
+          index: taskIndex,
+          total: work.length,
+          title,
+          published: false,
+          tokensUsed: used,
+        });
         continue;
       }
 
-      if (
-        await publishArticle({
-          supabase,
-          locale,
-          category,
-          generatedItem,
-          rawItems,
-          indexNowUrls,
-        })
-      ) {
+      const synthesisPublished = await publishArticle({
+        supabase,
+        locale,
+        category,
+        generatedItem,
+        rawItems,
+        indexNowUrls,
+      });
+      if (synthesisPublished) {
         generated += 1;
         longReadPublished = true;
       }
+      options?.onProgress?.({
+        type: "task_done",
+        index: taskIndex,
+        total: work.length,
+        title,
+        published: synthesisPublished,
+        tokensUsed: used,
+      });
       continue;
     }
 
@@ -1238,6 +1334,14 @@ export async function generatePendingArticles(): Promise<{
       generated += 1;
       if (job.format) longReadPublished = true;
     }
+    options?.onProgress?.({
+      type: "task_done",
+      index: taskIndex,
+      total: work.length,
+      title,
+      published,
+      tokensUsed: used,
+    });
   }
 
   const hadLongReadSlot = work.some(
@@ -1258,6 +1362,10 @@ export async function generatePendingArticles(): Promise<{
     if (backup) {
       const [hydratedBackup] = await hydratePendingDescriptions(supabase, [backup]);
       console.log("↻ backup długi materiał…");
+      options?.onProgress?.({
+        type: "backup_start",
+        title: hydratedBackup.title,
+      });
       const { published, tokensUsed: used } = await generateAndPublishSingle({
         supabase,
         rawItem: hydratedBackup,
@@ -1266,6 +1374,12 @@ export async function generatePendingArticles(): Promise<{
       });
       tokensUsed += used;
       if (published) generated += 1;
+      options?.onProgress?.({
+        type: "backup_done",
+        title: hydratedBackup.title,
+        published,
+        tokensUsed: used,
+      });
     }
   }
 

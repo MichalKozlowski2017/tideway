@@ -26,6 +26,84 @@ type LogLine = {
   tone?: "ok" | "err" | "muted";
 };
 
+type TaskStatus = "pending" | "active" | "done" | "skipped";
+
+type BatchTask = {
+  title: string;
+  kind: string;
+  status: TaskStatus;
+};
+
+type ProgressState = {
+  active: boolean;
+  runsTotal: number;
+  runCurrent: number;
+  articlesTarget: number;
+  articlesPublished: number;
+  tokensUsed: number;
+  currentTitle: string | null;
+  currentKind: string | null;
+  batchTasks: BatchTask[];
+  percent: number;
+};
+
+const INITIAL_PROGRESS: ProgressState = {
+  active: false,
+  runsTotal: 0,
+  runCurrent: 0,
+  articlesTarget: 0,
+  articlesPublished: 0,
+  tokensUsed: 0,
+  currentTitle: null,
+  currentKind: null,
+  batchTasks: [],
+  percent: 0,
+};
+
+type StreamEvent = {
+  type: string;
+  runs?: number;
+  run?: number;
+  total?: number;
+  totalRuns?: number;
+  ai?: string;
+  estimatedArticles?: number;
+  tasks?: number;
+  items?: Array<{ title: string; kind: string }>;
+  index?: number;
+  title?: string;
+  kind?: string;
+  published?: boolean;
+  tokensUsed?: number;
+  articlesTotal?: number;
+  tokensTotal?: number;
+  result?: { generated: number; tokensUsed: number };
+  summary?: { totalGenerated: number; totalTokens: number; runsCompleted: number };
+  message?: string;
+};
+
+function kindLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    trend: "Trend",
+    synteza: "Synteza",
+    essay: "Esej",
+    analysis: "Analiza",
+    story: "Reportaż",
+    community: "Społeczność",
+    guide: "Poradnik",
+    list: "Lista",
+    quiz: "Quiz",
+    backup: "Backup",
+    artykuł: "Artykuł",
+  };
+  return labels[kind] ?? kind;
+}
+
+function truncateTitle(title: string, max = 72): string {
+  if (title.length <= max) return title;
+  return `${title.slice(0, max - 1)}…`;
+}
+
 export function LocalGenerationPanel() {
   const [stats, setStats] = useState<PanelStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +114,7 @@ export function LocalGenerationPanel() {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
 
   const appendLog = useCallback((text: string, tone?: LogLine["tone"]) => {
     setLogs((prev) => [
@@ -65,12 +144,154 @@ export function LocalGenerationPanel() {
     void refreshStats();
   }, [refreshStats]);
 
+  function handleProgressEvent(event: StreamEvent) {
+    if (event.type === "start") {
+      setProgress({
+        ...INITIAL_PROGRESS,
+        active: true,
+        runsTotal: event.runs ?? 1,
+        articlesTarget: event.estimatedArticles ?? 4,
+      });
+      return;
+    }
+
+    if (event.type === "run_start" && event.run && event.total) {
+      setProgress((prev) => ({
+        ...prev,
+        active: true,
+        runCurrent: event.run!,
+        runsTotal: event.total!,
+        batchTasks: [],
+        currentTitle: null,
+        currentKind: null,
+      }));
+      return;
+    }
+
+    if (event.type === "batch_planned" && event.items) {
+      setProgress((prev) => ({
+        ...prev,
+        batchTasks: event.items!.map((item) => ({
+          title: item.title,
+          kind: item.kind,
+          status: "pending",
+        })),
+      }));
+      return;
+    }
+
+    if (event.type === "task_start" && event.index && event.title) {
+      setProgress((prev) => {
+        const batchTasks = prev.batchTasks.map((task, i) => ({
+          ...task,
+          status:
+            i + 1 === event.index!
+              ? ("active" as const)
+              : task.status === "active"
+                ? task.status
+                : task.status,
+        }));
+        return {
+          ...prev,
+          currentTitle: event.title!,
+          currentKind: event.kind ?? null,
+          batchTasks,
+          percent: computePercent(
+            prev.articlesPublished,
+            prev.articlesTarget,
+            event.index! - 1,
+            event.total ?? prev.batchTasks.length,
+            prev.runsTotal,
+            prev.runCurrent,
+            true,
+          ),
+        };
+      });
+      return;
+    }
+
+    if (event.type === "task_done" && event.index) {
+      setProgress((prev) => {
+        const published = event.published ?? false;
+        const articlesPublished = event.articlesTotal ?? prev.articlesPublished;
+        const batchTasks = prev.batchTasks.map((task, i) => ({
+          ...task,
+          status:
+            i + 1 === event.index!
+              ? published
+                ? ("done" as const)
+                : ("skipped" as const)
+              : task.status,
+        }));
+        return {
+          ...prev,
+          articlesPublished,
+          tokensUsed: event.tokensTotal ?? prev.tokensUsed,
+          currentTitle: null,
+          currentKind: null,
+          batchTasks,
+          percent: computePercent(
+            articlesPublished,
+            prev.articlesTarget,
+            event.index!,
+            event.total ?? prev.batchTasks.length,
+            prev.runsTotal,
+            prev.runCurrent,
+            false,
+          ),
+        };
+      });
+      return;
+    }
+
+    if (event.type === "backup_start" && event.title) {
+      setProgress((prev) => ({
+        ...prev,
+        currentTitle: event.title!,
+        currentKind: "backup",
+        batchTasks: [
+          ...prev.batchTasks,
+          { title: event.title!, kind: "backup", status: "active" },
+        ],
+      }));
+      return;
+    }
+
+    if (event.type === "backup_done") {
+      setProgress((prev) => {
+        const published = event.published ?? false;
+        const articlesPublished = event.articlesTotal ?? prev.articlesPublished;
+        const batchTasks = [...prev.batchTasks];
+        const last = batchTasks[batchTasks.length - 1];
+        if (last?.kind === "backup") {
+          batchTasks[batchTasks.length - 1] = {
+            ...last,
+            status: published ? "done" : "skipped",
+          };
+        }
+        return {
+          ...prev,
+          articlesPublished,
+          tokensUsed: event.tokensTotal ?? prev.tokensUsed,
+          currentTitle: null,
+          currentKind: null,
+          batchTasks,
+          percent: Math.min(
+            100,
+            (articlesPublished / Math.max(prev.articlesTarget, 1)) * 100,
+          ),
+        };
+      });
+    }
+  }
+
   async function startGeneration() {
     if (running) return;
     setRunning(true);
     setSummary(null);
     setError(null);
     setLogs([]);
+    setProgress(INITIAL_PROGRESS);
 
     const body =
       mode === "target"
@@ -106,20 +327,38 @@ export function LocalGenerationPanel() {
 
         for (const line of lines) {
           if (!line.trim()) continue;
-          const event = JSON.parse(line) as {
-            type: string;
-            run?: number;
-            total?: number;
-            ai?: string;
-            result?: { generated: number; tokensUsed: number };
-            summary?: { totalGenerated: number; totalTokens: number; runsCompleted: number };
-            message?: string;
-          };
+          const event = JSON.parse(line) as StreamEvent;
+          handleProgressEvent(event);
 
           if (event.type === "start") {
             appendLog(`AI: ${event.ai}`, "muted");
           } else if (event.type === "run_start") {
             appendLog(`Batch ${event.run}/${event.total}…`);
+          } else if (event.type === "batch_planned" && event.items) {
+            appendLog(
+              `Plan batcha: ${event.tasks ?? event.items.length} zadań`,
+              "muted",
+            );
+          } else if (event.type === "task_start" && event.title) {
+            appendLog(
+              `→ [${kindLabel(event.kind ?? "artykuł")}] ${truncateTitle(event.title, 60)}`,
+            );
+          } else if (event.type === "task_done" && event.title) {
+            appendLog(
+              event.published
+                ? `✓ ${truncateTitle(event.title, 50)}`
+                : `⊘ pominięto: ${truncateTitle(event.title, 50)}`,
+              event.published ? "ok" : "muted",
+            );
+          } else if (event.type === "backup_start" && event.title) {
+            appendLog(`↻ backup: ${truncateTitle(event.title, 50)}`, "muted");
+          } else if (event.type === "backup_done" && event.title) {
+            appendLog(
+              event.published
+                ? `✓ backup: ${truncateTitle(event.title, 50)}`
+                : `⊘ backup nieudany`,
+              event.published ? "ok" : "muted",
+            );
           } else if (event.type === "run_done" && event.result) {
             appendLog(
               `Batch ${event.run} gotowy: ${event.result.generated} artykułów, ${event.result.tokensUsed} tokenów`,
@@ -130,6 +369,15 @@ export function LocalGenerationPanel() {
             setSummary(
               `Opublikowano ${s.totalGenerated} artykułów w ${s.runsCompleted} batchach (${s.totalTokens} tokenów)`,
             );
+            setProgress((prev) => ({
+              ...prev,
+              active: false,
+              articlesPublished: s.totalGenerated,
+              tokensUsed: s.totalTokens,
+              percent: 100,
+              currentTitle: null,
+              currentKind: null,
+            }));
             appendLog("Zakończono.", "ok");
           } else if (event.type === "error") {
             throw new Error(event.message ?? "Błąd generowania");
@@ -142,6 +390,7 @@ export function LocalGenerationPanel() {
       const message = err instanceof Error ? err.message : "Błąd generowania";
       setError(message);
       appendLog(message, "err");
+      setProgress((prev) => ({ ...prev, active: false }));
     } finally {
       setRunning(false);
     }
@@ -151,6 +400,8 @@ export function LocalGenerationPanel() {
     mode === "target"
       ? targetArticles
       : runs * (stats?.articlesPerBatch ?? 4);
+
+  const showProgress = running || (progress.percent > 0 && progress.articlesPublished > 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-10">
@@ -232,6 +483,14 @@ export function LocalGenerationPanel() {
           </p>
         </div>
 
+        {showProgress && (
+          <GenerationProgress
+            progress={progress}
+            running={running}
+            estimatedArticles={estimatedArticles}
+          />
+        )}
+
         <div className="mt-6 flex flex-wrap gap-3">
           <button
             type="button"
@@ -307,6 +566,171 @@ export function LocalGenerationPanel() {
         </section>
       )}
     </div>
+  );
+}
+
+function computePercent(
+  articlesPublished: number,
+  articlesTarget: number,
+  tasksDoneInBatch: number,
+  tasksInBatch: number,
+  runsTotal: number,
+  runCurrent: number,
+  taskInProgress: boolean,
+): number {
+  const target = Math.max(articlesTarget, 1);
+  const fromArticles = (articlesPublished / target) * 100;
+
+  if (runsTotal <= 0 || tasksInBatch <= 0) {
+    return Math.min(99, fromArticles);
+  }
+
+  const runWeight = 100 / runsTotal;
+  const completedRuns = Math.max(0, runCurrent - 1);
+  const batchProgress =
+    (tasksDoneInBatch + (taskInProgress ? 0.35 : 0)) / tasksInBatch;
+  const fromRuns =
+    completedRuns * runWeight + batchProgress * runWeight;
+
+  return Math.min(99, Math.max(fromArticles, fromRuns));
+}
+
+function GenerationProgress({
+  progress,
+  running,
+  estimatedArticles,
+}: {
+  progress: ProgressState;
+  running: boolean;
+  estimatedArticles: number;
+}) {
+  const target = progress.articlesTarget || estimatedArticles;
+  const isActive = running && progress.active;
+
+  return (
+    <div className="mt-6 space-y-4 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-violet-600">
+            Postęp
+          </p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900">
+            {progress.articlesPublished}
+            <span className="text-lg font-normal text-zinc-400">
+              {" "}
+              / {target} artykułów
+            </span>
+          </p>
+        </div>
+        <div className="text-right text-sm text-zinc-500">
+          {progress.runCurrent > 0 && (
+            <p>
+              Batch {progress.runCurrent}/{progress.runsTotal || "?"}
+            </p>
+          )}
+          <p className="tabular-nums">{progress.tokensUsed.toLocaleString("pl-PL")} tokenów</p>
+        </div>
+      </div>
+
+      <div className="relative h-3 overflow-hidden rounded-full bg-violet-100">
+        <div
+          className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-violet-600 transition-[width] duration-700 ease-out ${
+            isActive ? "shadow-[0_0_12px_rgba(139,92,246,0.45)]" : ""
+          }`}
+          style={{ width: `${Math.max(progress.percent, isActive ? 4 : 0)}%` }}
+        />
+        {isActive && (
+          <div className="absolute inset-0 animate-pulse rounded-full bg-white/20" />
+        )}
+      </div>
+
+      <p className="text-sm text-zinc-600">
+        {isActive && progress.currentTitle ? (
+          <>
+            <span className="inline-flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-600" />
+              </span>
+              Tworzę{" "}
+              <span className="font-medium text-zinc-900">
+                {kindLabel(progress.currentKind ?? "artykuł")}
+              </span>
+              :
+            </span>{" "}
+            <span className="text-zinc-800">{truncateTitle(progress.currentTitle)}</span>
+          </>
+        ) : running ? (
+          "Przygotowuję kolejny batch…"
+        ) : (
+          "Generowanie zakończone."
+        )}
+      </p>
+
+      {progress.batchTasks.length > 0 && (
+        <ul className="space-y-2">
+          {progress.batchTasks.map((task, i) => (
+            <li
+              key={`${task.title}-${i}`}
+              className="flex items-start gap-3 rounded-xl bg-white/70 px-3 py-2 text-sm"
+            >
+              <TaskIcon status={task.status} />
+              <div className="min-w-0 flex-1">
+                <p
+                  className={`truncate font-medium ${
+                    task.status === "active"
+                      ? "text-violet-900"
+                      : task.status === "done"
+                        ? "text-emerald-800"
+                        : task.status === "skipped"
+                          ? "text-zinc-400 line-through"
+                          : "text-zinc-700"
+                  }`}
+                >
+                  {truncateTitle(task.title, 64)}
+                </p>
+                <p className="text-xs text-zinc-400">{kindLabel(task.kind)}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function TaskIcon({ status }: { status: TaskStatus }) {
+  if (status === "done") {
+    return (
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
+          <path
+            fillRule="evenodd"
+            d="M16.704 5.29a1 1 0 010 1.42l-7.25 8a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 111.42-1.42l2.79 2.79 6.54-7.29a1 1 0 011.42 0z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </span>
+    );
+  }
+  if (status === "skipped") {
+    return (
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-400">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
+          <path d="M5.5 5.5a.75.75 0 011.06 0L10 8.94l3.44-3.44a.75.75 0 111.06 1.06L11.06 10l3.44 3.44a.75.75 0 11-1.06 1.06L10 11.06l-3.44 3.44a.75.75 0 11-1.06-1.06L8.94 10 5.5 6.56a.75.75 0 010-1.06z" />
+        </svg>
+      </span>
+    );
+  }
+  if (status === "active") {
+    return (
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
+      </span>
+    );
+  }
+  return (
+    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50" />
   );
 }
 

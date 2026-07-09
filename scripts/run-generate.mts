@@ -20,7 +20,7 @@ const runs =
       : 2;
 
 console.log("Tideway generate — start…");
-console.log(`Batchy: ${runs} (panel: http://localhost:3000/local)\n`);
+console.log(`Batchy: ${runs} (panel: http://localhost:3000/panel)\n`);
 
 const summary = await runGenerateBatches({
   runs,

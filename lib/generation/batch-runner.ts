@@ -1,5 +1,8 @@
 import { describeAiSetup, getAiProvider, getAiModel } from "@/lib/ai/client";
-import { generatePendingArticles } from "@/lib/ai/generate";
+import {
+  generatePendingArticles,
+  type GeneratePendingProgressEvent,
+} from "@/lib/ai/generate";
 
 export const ARTICLES_PER_BATCH = 4;
 
@@ -15,9 +18,17 @@ export type GenerateRunSummary = {
   runResults: GenerateBatchResult[];
 };
 
+type RunScopedProgress = GeneratePendingProgressEvent & {
+  run: number;
+  totalRuns: number;
+  articlesTotal: number;
+  tokensTotal: number;
+};
+
 export type GenerateProgressEvent =
-  | { type: "start"; runs: number; ai: string }
+  | { type: "start"; runs: number; ai: string; estimatedArticles: number }
   | { type: "run_start"; run: number; total: number }
+  | RunScopedProgress
   | { type: "run_done"; run: number; result: GenerateBatchResult }
   | { type: "done"; summary: GenerateRunSummary }
   | { type: "error"; message: string };
@@ -35,12 +46,34 @@ export async function runGenerateBatches(options: {
     type: "start",
     runs,
     ai: describeAiSetup(),
+    estimatedArticles: runs * ARTICLES_PER_BATCH,
   });
 
   for (let i = 0; i < runs; i += 1) {
     options.onEvent?.({ type: "run_start", run: i + 1, total: runs });
 
-    const result = await generatePendingArticles();
+    let runArticles = 0;
+    let runTokens = 0;
+
+    const result = await generatePendingArticles({
+      onProgress: (event) => {
+        if (event.type === "task_done") {
+          runTokens += event.tokensUsed;
+          if (event.published) runArticles += 1;
+        }
+        if (event.type === "backup_done") {
+          runTokens += event.tokensUsed;
+          if (event.published) runArticles += 1;
+        }
+        options.onEvent?.({
+          ...event,
+          run: i + 1,
+          totalRuns: runs,
+          articlesTotal: totalGenerated + runArticles,
+          tokensTotal: totalTokens + runTokens,
+        });
+      },
+    });
     runResults.push(result);
     totalGenerated += result.generated;
     totalTokens += result.tokensUsed;
