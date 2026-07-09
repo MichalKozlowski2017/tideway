@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
 import type { Category } from "@/lib/types";
 import { CATEGORY_PLACEHOLDER } from "@/lib/articles/resolve-image";
 
@@ -17,13 +20,14 @@ export function ArticleImage({
   priority = false,
   variant = "card",
 }: ArticleImageProps) {
+  const [broken, setBroken] = useState(false);
   const placeholder =
     CATEGORY_PLACEHOLDER[category as Category] ?? CATEGORY_PLACEHOLDER.tech;
 
   const hero = variant === "hero";
   const aspect = hero ? "aspect-[21/9]" : "aspect-[16/10]";
 
-  if (imageUrl) {
+  if (imageUrl && !broken) {
     return (
       <div
         className={`relative ${aspect} w-full overflow-hidden ${hero ? "rounded-2xl" : ""}`}
@@ -36,6 +40,7 @@ export function ArticleImage({
           priority={priority}
           sizes={hero ? "(max-width: 768px) 100vw, 768px" : "(max-width: 640px) 100vw, 320px"}
           className="object-cover transition duration-500 group-hover:scale-[1.02]"
+          onError={() => setBroken(true)}
         />
       </div>
     );

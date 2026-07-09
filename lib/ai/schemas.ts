@@ -201,7 +201,9 @@ export function normalizeGeneratedArticle(
       // Avoid incorrect declensions of English event names in Polish output.
       // Prefer Polish shorthand used commonly in sports coverage.
       .replace(/\b(FIFA\s+)?World\s+Cup(a|ie|u|em|ów|ami)?\b/gi, "MŚ")
-      .replace(/\bWorld\s+Cup\b/gi, "MŚ");
+      .replace(/\bWorld\s+Cup\b/gi, "MŚ")
+      // Local models often decline brand names (e.g. "od Anthropica", "Anthropica Claude").
+      .replace(/\bAnthropica\b/gi, "Anthropic");
   };
 
   const itemCleaned: GeneratedArticle = {

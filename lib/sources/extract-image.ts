@@ -6,19 +6,31 @@ const TRACKER_HOSTS = [
   "beacon.",
 ];
 
-export function isValidImageUrl(url: string | null | undefined): url is string {
-  if (!url?.trim()) return false;
+/** RSS/HTML often entity-encode query strings (&amp;) — breaks hotlinked CDN URLs. */
+export function normalizeImageUrl(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  const normalized = url
+    .trim()
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;/gi, "'");
   try {
-    const parsed = new URL(url.trim());
-    if (!["http:", "https:"].includes(parsed.protocol)) return false;
-    const lower = parsed.href.toLowerCase();
-    if (lower.startsWith("data:")) return false;
-    if (lower.endsWith(".svg") || lower.includes(".svg?")) return false;
-    if (TRACKER_HOSTS.some((t) => lower.includes(t))) return false;
-    return true;
+    const parsed = new URL(normalized);
+    if (!["http:", "https:"].includes(parsed.protocol)) return null;
+    return parsed.href;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function isValidImageUrl(url: string | null | undefined): url is string {
+  const normalized = normalizeImageUrl(url);
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  if (lower.startsWith("data:")) return false;
+  if (lower.endsWith(".svg") || lower.includes(".svg?")) return false;
+  if (TRACKER_HOSTS.some((t) => lower.includes(t))) return false;
+  return true;
 }
 
 /** User profile photos from forums, dev.to, Reddit, etc. — not licensed for reuse */
@@ -74,16 +86,22 @@ export function isWeakPreviewImage(url: string | null | undefined): boolean {
 }
 
 export function isUsableArticleImage(url: string | null | undefined): url is string {
-  return (
-    isValidImageUrl(url) &&
-    !isWeakPreviewImage(url) &&
-    !isProfileOrAvatarImage(url)
-  );
+  const normalized = normalizeImageUrl(url);
+  if (!normalized) return false;
+  return !isWeakPreviewImage(normalized) && !isProfileOrAvatarImage(normalized);
+}
+
+export function usableArticleImageUrl(url: string | null | undefined): string | null {
+  const normalized = normalizeImageUrl(url);
+  if (!normalized) return null;
+  if (isWeakPreviewImage(normalized) || isProfileOrAvatarImage(normalized)) return null;
+  return normalized;
 }
 
 export function pickLargestImageUrl(candidates: Array<string | undefined | null>): string | null {
   for (const url of candidates) {
-    if (isValidImageUrl(url)) return url.trim();
+    const normalized = normalizeImageUrl(url);
+    if (normalized && isValidImageUrl(normalized)) return normalized;
   }
   return null;
 }
@@ -100,16 +118,25 @@ export function extractImageFromHtml(html: string | undefined | null): string | 
 
   for (const pattern of metaPatterns) {
     const match = html.match(pattern);
-    if (match?.[1] && isValidImageUrl(match[1])) return match[1];
+    if (match?.[1]) {
+      const normalized = normalizeImageUrl(match[1]);
+      if (normalized && isValidImageUrl(normalized)) return normalized;
+    }
   }
 
   const linkMatch = html.match(
     /<link[^>]+rel=["'](?:image_src|apple-touch-icon)["'][^>]+href=["']([^"']+)["']/i,
   );
-  if (linkMatch?.[1] && isValidImageUrl(linkMatch[1])) return linkMatch[1];
+  if (linkMatch?.[1]) {
+    const normalized = normalizeImageUrl(linkMatch[1]);
+    if (normalized && isValidImageUrl(normalized)) return normalized;
+  }
 
   const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-  if (imgMatch?.[1] && isValidImageUrl(imgMatch[1])) return imgMatch[1];
+  if (imgMatch?.[1]) {
+    const normalized = normalizeImageUrl(imgMatch[1]);
+    if (normalized && isValidImageUrl(normalized)) return normalized;
+  }
 
   return null;
 }

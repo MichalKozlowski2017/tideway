@@ -1,8 +1,5 @@
 import { fetchOgImage } from "@/lib/sources/og-image";
-import {
-  isUsableArticleImage,
-  isValidImageUrl,
-} from "@/lib/sources/extract-image";
+import { usableArticleImageUrl } from "@/lib/sources/extract-image";
 import type { NormalizedItem } from "@/lib/types";
 
 const HN_HOSTS = new Set(["news.ycombinator.com", "www.news.ycombinator.com"]);
@@ -10,9 +7,8 @@ const HN_HOSTS = new Set(["news.ycombinator.com", "www.news.ycombinator.com"]);
 export async function enrichItemImageUrl(
   item: Pick<NormalizedItem, "url" | "imageUrl">,
 ): Promise<string | null> {
-  if (isUsableArticleImage(item.imageUrl)) {
-    return item.imageUrl.trim();
-  }
+  const usable = usableArticleImageUrl(item.imageUrl);
+  if (usable) return usable;
 
   try {
     const host = new URL(item.url).hostname;
@@ -22,5 +18,5 @@ export async function enrichItemImageUrl(
   }
 
   const og = await fetchOgImage(item.url);
-  return isUsableArticleImage(og) ? og : null;
+  return usableArticleImageUrl(og);
 }

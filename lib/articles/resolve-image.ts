@@ -1,9 +1,8 @@
 import type { Category } from "@/lib/types";
 import { fetchOgImage } from "@/lib/sources/og-image";
 import {
-  isUsableArticleImage,
-  isValidImageUrl,
   isWeakPreviewImage,
+  usableArticleImageUrl,
 } from "@/lib/sources/extract-image";
 
 function isStockFallback(url: string): boolean {
@@ -21,22 +20,19 @@ export async function resolveArticleImageUrl(params: {
   fetchOg?: boolean;
   category?: Category;
 }): Promise<string | null> {
-  const source = params.sourceImageUrl?.trim();
+  const source = usableArticleImageUrl(params.sourceImageUrl);
 
-  if (
-    source &&
-    isUsableArticleImage(source) &&
-    !isStockFallback(source)
-  ) {
+  if (source && !isStockFallback(source)) {
     return source;
   }
 
   if (params.fetchOg !== false) {
     const og = await fetchOgImage(params.pageUrl);
-    if (isUsableArticleImage(og)) return og;
+    const usableOg = usableArticleImageUrl(og);
+    if (usableOg) return usableOg;
   }
 
-  if (source && isUsableArticleImage(source)) {
+  if (source) {
     return source;
   }
 

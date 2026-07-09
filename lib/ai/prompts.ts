@@ -120,6 +120,7 @@ export function buildSingleArticlePrompt(
       ? `Polish style guardrails:
 - Use natural Polish phrasing; do NOT produce literal EN->PL calques.
 - Do NOT inflect English event names (bad: "World Cupa", "Premier League'u"). Prefer Polish forms/shortcuts (e.g. "MŚ", "Liga Mistrzów") or keep proper names unchanged.
+- Do NOT inflect English brand/company names (bad: "Anthropica", "OpenAIa", "Googlea"). Keep unchanged: Anthropic, OpenAI, Meta, Google, Microsoft, Apple, Nvidia.
 - Lead and why_it_matters must include at least one concrete fact (name, score, date, number, or place).`
       : "";
 
@@ -320,6 +321,7 @@ export function buildTrendArticlePrompt(
       ? `Polish style guardrails:
 - Use idiomatic Polish; avoid literal EN->PL calques.
 - Never inflect English event names (bad: "World Cupa"). Prefer Polish equivalents ("MŚ") or unchanged proper names.
+- Never inflect English brand/company names (bad: "Anthropica", "OpenAIa"). Keep: Anthropic, OpenAI, Meta, Google, Microsoft.
 - Lead and why_it_matters must contain concrete facts, not generic filler.`
       : "";
 
