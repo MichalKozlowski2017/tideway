@@ -7,6 +7,7 @@ import {
 import { activeLocales } from "@/lib/i18n/config";
 import { MAIN_CATEGORIES } from "@/lib/types";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
+import { cronAiDisabledResponse, isCronAiEnabled } from "@/lib/utils/cron-ai";
 
 const LOCALES = activeLocales;
 const CATEGORIES = MAIN_CATEGORIES;
@@ -14,6 +15,10 @@ const CATEGORIES = MAIN_CATEGORIES;
 export async function POST(request: NextRequest) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isCronAiEnabled()) {
+    return cronAiDisabledResponse();
   }
 
   const job = await startJob("daily-rollup");

@@ -5,12 +5,17 @@ import {
   startJob,
 } from "@/lib/ai/generate";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
+import { cronAiDisabledResponse, isCronAiEnabled } from "@/lib/utils/cron-ai";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isCronAiEnabled()) {
+    return cronAiDisabledResponse();
   }
 
   const job = await startJob("generate");

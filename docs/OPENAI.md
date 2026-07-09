@@ -75,7 +75,26 @@ Odpowiedź zawiera aktywny provider:
 
 ## Vercel (prod)
 
-**Settings → Environment Variables:**
+**Generowanie AI wyłączone na Vercel** — artykuły lecą z lokalnego PC (Ollama). Na Vercel zostają tylko crony: **ingest** + **cleanup**.
+
+W **Settings → Environment Variables** (Production):
+
+```env
+CRON_AI_ENABLED=false
+```
+
+To blokuje `/api/cron/generate`, `daily-rollup` i `weekly-rollup` nawet przy ręcznym wywołaniu. Crone tych endpointów są usunięte z `vercel.json`.
+
+| Zmienna | Vercel prod | Lokalnie (Mac → PC) |
+|---|---|---|
+| `CRON_AI_ENABLED` | `false` | nie ustawiaj (domyślnie włączone) |
+| `AI_PROVIDER` | — | `local` |
+| `LOCAL_AI_BASE_URL` | — | `http://192.168.0.200:11434/v1` |
+| `OPENAI_API_KEY` | opcjonalnie (na wyjazd) | zostaw na przełącznik |
+
+**Przy wyjeździe** (bez PC): ustaw na Vercel `CRON_AI_ENABLED=true`, przywróć crony w `vercel.json` albo odpalaj `run-generate.mts` z `AI_PROVIDER=openai`.
+
+**Settings → Environment Variables** (pozostałe):
 
 | Zmienna | OpenAI | Local (tylko z tunelem) |
 |---|---|---|
