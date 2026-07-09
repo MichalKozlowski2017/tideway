@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { resolve } from "path";
+import { runGenerateBatches } from "../lib/generation/batch-runner.ts";
 
 for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").split("\n")) {
   const trimmed = line.trim();
@@ -9,24 +10,28 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
   process.env[trimmed.slice(0, eq)] ??= trimmed.slice(eq + 1);
 }
 
+const argRuns = Number(process.argv[2]);
+const envRuns = Number(process.env.GENERATE_RUNS);
+const runs =
+  Number.isFinite(argRuns) && argRuns > 0
+    ? argRuns
+    : Number.isFinite(envRuns) && envRuns > 0
+      ? envRuns
+      : 2;
+
 console.log("Tideway generate — start…");
-console.log("(Produkcja: 1 batch co 20 min, ~130 artykułów/dzień. Lokalnie: 2 batche testowe.)\n");
+console.log(`Batchy: ${runs} (panel: http://localhost:3000/local)\n`);
 
-const { generatePendingArticles } = await import("../lib/ai/generate.ts");
+const summary = await runGenerateBatches({
+  runs,
+  onEvent: (event) => {
+    if (event.type === "run_start") {
+      console.log(`--- Run ${event.run}/${event.total} ---`);
+    }
+    if (event.type === "run_done") {
+      console.log(`Run ${event.run} done:`, event.result, "\n");
+    }
+  },
+});
 
-let totalGenerated = 0;
-let totalTokens = 0;
-const runs = 2;
-
-for (let i = 0; i < runs; i += 1) {
-  console.log(`--- Run ${i + 1}/${runs} ---`);
-  const result = await generatePendingArticles();
-  totalGenerated += result.generated;
-  totalTokens += result.tokensUsed;
-  console.log(`Run ${i + 1} done:`, result, "\n");
-  if (result.generated === 0) break;
-}
-
-console.log(
-  JSON.stringify({ totalGenerated, totalTokens, runs }, null, 2),
-);
+console.log(JSON.stringify(summary, null, 2));
