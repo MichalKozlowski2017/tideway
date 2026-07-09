@@ -19,9 +19,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { generated, tokensUsed } = await generatePendingArticles();
+    const result = await generatePendingArticles();
+    const { generated, tokensUsed, aiProvider, aiModel } = result;
     await finishJob(job.id, "completed", generated, tokensUsed);
-    return NextResponse.json({ ok: true, generated, tokensUsed });
+    return NextResponse.json({ ok: true, generated, tokensUsed, aiProvider, aiModel });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     await finishJob(job.id, "failed", 0, 0, message);

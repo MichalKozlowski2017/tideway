@@ -1,51 +1,86 @@
-# OpenAI (Tideway)
+# AI (Tideway)
 
-Tideway używa **GPT-4o mini** do generowania streszczeń, nagłówków SEO i tagów.
+Generowanie artykułów i quality gate używają jednego przełącznika **`AI_PROVIDER`**.
 
-## 1. Utwórz klucz API
+## Szybki switch
 
-1. Wejdź na https://platform.openai.com/api-keys
-2. Zaloguj się (lub załóż konto)
-3. **Create new secret key** → nazwa np. `tideway`
-4. Skopiuj klucz (`sk-...`) — pokazuje się tylko raz
+| Sytuacja | `.env.local` / Vercel |
+|---|---|
+| PC w domu, Ollama działa | `AI_PROVIDER=local` |
+| Wyjazd, GTA, laptop wyłączony | `AI_PROVIDER=openai` (domyślnie) |
 
-## 2. Billing
+Po zmianie zrestartuj dev server albo zrób redeploy na Vercel.
 
-GPT-4o mini wymaga aktywnego billingu (karta), ale koszt MVP to ~**5–8 USD/mies.**
+---
 
-Ustaw limit miesięczny: https://platform.openai.com/settings/organization/limits  
-Rekomendacja na start: **10 USD/mies.**
-
-## 3. Konfiguracja lokalna
-
-W `.env.local`:
+## OpenAI (domyślnie)
 
 ```env
+AI_PROVIDER=openai
 OPENAI_API_KEY=sk-twoj-klucz
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-Po zapisaniu zrestartuj dev server (`npm run dev`).
+### Klucz API
 
-## 4. Test generowania
+1. https://platform.openai.com/api-keys
+2. **Create new secret key** → np. `tideway`
+3. Billing + limit miesięczny (~10 USD na start): https://platform.openai.com/settings/organization/limits
 
-W bazie muszą być `raw_items` ze statusem `pending` (po cronie ingest).
+---
+
+## Lokalny model (Ollama)
+
+Na PC z GPU (np. RTX 5080):
+
+```bash
+# instalacja: https://ollama.com
+ollama pull qwen2.5:32b-instruct-q4_K_M
+ollama serve   # zwykle działa w tle po instalacji
+```
+
+W `.env.local`:
+
+```env
+AI_PROVIDER=local
+LOCAL_AI_BASE_URL=http://localhost:11434/v1
+LOCAL_AI_API_KEY=ollama
+LOCAL_AI_MODEL=qwen2.5:32b-instruct-q4_K_M
+```
+
+**Vercel prod** nie widzi Twojego `localhost`. Na produkcji zostaw `AI_PROVIDER=openai`, chyba że wystawisz Ollama przez Tailscale/Cloudflare Tunnel i ustawisz `LOCAL_AI_BASE_URL` na publiczny URL tunelu.
+
+---
+
+## Test generowania
+
+W bazie muszą być `raw_items` ze statusem `pending`.
 
 ```bash
 curl -X POST http://localhost:3000/api/cron/generate \
-  -H "Authorization: Bearer <CRON_SECRET z .env.local>"
+  -H "Authorization: Bearer <CRON_SECRET>"
 ```
 
-Oczekiwana odpowiedź: `{"ok":true,"generated":10,"tokensUsed":...}`
+Odpowiedź zawiera aktywny provider:
 
-## 5. Weryfikacja
-
-- Strona główna: http://localhost:3000 — powinny pojawić się artykuły
-- Supabase → `articles` — nowe rekordy
-- `raw_items.status` zmienia się z `pending` na `processed`
+```json
+{
+  "ok": true,
+  "generated": 4,
+  "tokensUsed": 12000,
+  "aiProvider": "local",
+  "aiModel": "qwen2.5:32b-instruct-q4_K_M"
+}
+```
 
 ## Vercel (prod)
 
-Te same zmienne w **Settings → Environment Variables**:
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL` (opcjonalnie)
+**Settings → Environment Variables:**
+
+| Zmienna | OpenAI | Local (tylko z tunelem) |
+|---|---|---|
+| `AI_PROVIDER` | `openai` | `local` |
+| `OPENAI_API_KEY` | wymagane | — |
+| `OPENAI_MODEL` | opcjonalnie | — |
+| `LOCAL_AI_BASE_URL` | — | URL tunelu |
+| `LOCAL_AI_MODEL` | — | opcjonalnie |

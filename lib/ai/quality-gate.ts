@@ -1,21 +1,14 @@
-import OpenAI from "openai";
+import { getAiClient, getAiModel } from "@/lib/ai/client";
 import type { GeneratedArticle } from "@/lib/ai/schemas";
 import type { Locale } from "@/lib/types";
 import { z } from "zod";
 
 export const QUALITY_MIN_SCORE = 7;
-const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
 const scoreSchema = z.object({
   score: z.number().min(1).max(10),
   reason: z.string(),
 });
-
-function getOpenAI(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("Missing OPENAI_API_KEY");
-  return new OpenAI({ apiKey });
-}
 
 export async function scoreArticleQuality(
   article: GeneratedArticle,
@@ -43,9 +36,9 @@ Why it matters: ${article.why_it_matters}
 
 Return ONLY JSON: { "score": number, "reason": "one sentence" }`;
 
-  const openai = getOpenAI();
+  const openai = getAiClient();
   const response = await openai.chat.completions.create({
-    model: MODEL,
+    model: getAiModel(),
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
     temperature: 0.2,
@@ -58,7 +51,7 @@ Return ONLY JSON: { "score": number, "reason": "one sentence" }`;
 
   const parsed = scoreSchema.safeParse(JSON.parse(content));
   if (!parsed.success) {
-    return { score: 0, reason: "invalid score response", tokensUsed: 0 };
+    return { score: 0, reason: "invalid score JSON", tokensUsed: 0 };
   }
 
   return {

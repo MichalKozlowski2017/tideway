@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { describeAiSetup, getAiClient, getAiModel, getAiProvider } from "@/lib/ai/client";
 import {
   isGuideCandidate,
   isListCandidate,
@@ -74,25 +74,18 @@ const TREND_CANDIDATE_LIMIT = 12;
 const TREND_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 const MIN_TREND_CONTEXT_MATCHES = 1;
 const CLICKABLE_CATEGORIES = new Set<Category>(["sport", "gaming"]);
-const MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_GENERATION_ATTEMPTS = 2;
 
 type PendingItem = RawItem & {
   sources: Pick<Source, "category" | "locale" | "type" | "config">;
 };
 
-function getOpenAI(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("Missing OPENAI_API_KEY");
-  return new OpenAI({ apiKey });
-}
-
-async function callOpenAI(
+async function callAi(
   prompt: string,
 ): Promise<{ content: string; tokensUsed: number }> {
-  const openai = getOpenAI();
+  const openai = getAiClient();
   const response = await openai.chat.completions.create({
-    model: MODEL,
+    model: getAiModel(),
     messages: [{ role: "user", content: prompt }],
     response_format: { type: "json_object" },
     temperature: 0.65,
@@ -539,7 +532,7 @@ async function generateArticleDraft(params: {
       console.log(`  retry ${attempt + 1}/${MAX_GENERATION_ATTEMPTS}…`);
     }
 
-    const { content, tokensUsed: used } = await callOpenAI(
+    const { content, tokensUsed: used } = await callAi(
       params.buildPrompt(attempt > 0),
     );
     tokensUsed += used;
@@ -938,7 +931,10 @@ export async function generatePendingArticles(): Promise<{
   skippedTrends: number;
   skippedDuplicates: number;
   trendArticles: number;
+  aiProvider: string;
+  aiModel: string;
 }> {
+  console.log(`AI provider: ${describeAiSetup()}`);
   const supabase = getSupabaseAdmin();
 
   const [trendPendingRaw, articlePendingRaw] = await Promise.all([
@@ -960,6 +956,8 @@ export async function generatePendingArticles(): Promise<{
       skippedTrends: 0,
       skippedDuplicates: 0,
       trendArticles: 0,
+      aiProvider: getAiProvider(),
+      aiModel: getAiModel(),
     };
   }
 
@@ -1041,6 +1039,8 @@ export async function generatePendingArticles(): Promise<{
       skippedTrends,
       skippedDuplicates,
       trendArticles: 0,
+      aiProvider: getAiProvider(),
+      aiModel: getAiModel(),
     };
   }
 
@@ -1218,7 +1218,15 @@ export async function generatePendingArticles(): Promise<{
 
   await notifyIndexNow(indexNowUrls);
 
-  return { generated, tokensUsed, skippedTrends, skippedDuplicates, trendArticles };
+  return {
+    generated,
+    tokensUsed,
+    skippedTrends,
+    skippedDuplicates,
+    trendArticles,
+    aiProvider: getAiProvider(),
+    aiModel: getAiModel(),
+  };
 }
 
 export async function generateDigest(
@@ -1253,7 +1261,7 @@ export async function generateDigest(
 
   const prompt = buildDigestPrompt(locale, digestType, category, recent);
 
-  const { content } = await callOpenAI(prompt);
+  const { content } = await callAi(prompt);
   const digest: DigestArticle = digestResponseSchema.parse(JSON.parse(content));
 
   const digestSummary = {

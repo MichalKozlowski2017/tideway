@@ -6,7 +6,7 @@ Automatyczny serwis podsumowań trendów (PL + EN). Pobiera dane z Reddit, RSS, 
 
 - **Next.js 16** (App Router, ISR)
 - **Supabase** (Postgres)
-- **OpenAI** (gpt-4o-mini)
+- **OpenAI** lub **lokalny Ollama** (`AI_PROVIDER=openai|local`)
 - **Vercel Cron**
 
 ## Źródła danych
