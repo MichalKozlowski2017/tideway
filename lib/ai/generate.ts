@@ -75,6 +75,9 @@ const TREND_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 const MIN_TREND_CONTEXT_MATCHES = 1;
 const CLICKABLE_CATEGORIES = new Set<Category>(["sport", "gaming"]);
 const MAX_GENERATION_ATTEMPTS = 2;
+const MAX_GENERATION_ATTEMPTS_LOCAL = 3;
+const SOURCE_TEXT_MIN_FOR_LONG_READ = 420;
+const SOURCE_TEXT_MIN_FOR_ANALYSIS = 280;
 
 type PendingItem = RawItem & {
   sources: Pick<Source, "category" | "locale" | "type" | "config">;
@@ -98,6 +101,46 @@ async function callAi(
     content,
     tokensUsed: response.usage?.total_tokens ?? 0,
   };
+}
+
+function maxGenerationAttempts(): number {
+  return getAiProvider() === "local"
+    ? MAX_GENERATION_ATTEMPTS_LOCAL
+    : MAX_GENERATION_ATTEMPTS;
+}
+
+function parseAiJson(content: string): unknown {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("```")) {
+    const unwrapped = trimmed
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "");
+    return JSON.parse(unwrapped);
+  }
+  return JSON.parse(trimmed);
+}
+
+function adaptFormatForSourceDepth(
+  format: ArticleFormat,
+  item: PendingItem,
+  sourceText: string,
+): ArticleFormat {
+  if (item.sources.type === "google_trends") return format;
+
+  const len = sourceText.trim().length;
+  if (len >= SOURCE_TEXT_MIN_FOR_LONG_READ) return format;
+
+  if (len < SOURCE_TEXT_MIN_FOR_ANALYSIS) {
+    if (format === "analysis" || format === "essay" || format === "synthesis") {
+      return item.sources.type === "hacker_news" || item.sources.type === "lobsters"
+        ? "community"
+        : "story";
+    }
+    return format;
+  }
+
+  if (format === "essay" || format === "synthesis") return "analysis";
+  return format;
 }
 
 async function ensureUniqueSlug(
@@ -526,27 +569,27 @@ async function generateArticleDraft(params: {
   trendQuery?: string;
 }): Promise<{ article: GeneratedArticle | null; tokensUsed: number }> {
   let tokensUsed = 0;
+  const attempts = maxGenerationAttempts();
 
-  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (attempt > 0) {
-      console.log(`  retry ${attempt + 1}/${MAX_GENERATION_ATTEMPTS}…`);
+      console.log(`  retry ${attempt + 1}/${attempts}…`);
     }
 
-    const { content, tokensUsed: used } = await callAi(
-      params.buildPrompt(attempt > 0),
-    );
+    const { content, tokensUsed: used } = await callAi(params.buildPrompt(attempt > 0));
     tokensUsed += used;
 
-    const normalized = normalizeGeneratedArticle(
-      JSON.parse(content),
-      params.fallbackTitle,
-      params.locale,
-      params.format,
-      {
-        sourceText: params.sourceText,
-        trendQuery: params.trendQuery,
-      },
-    );
+    let parsed: unknown;
+    try {
+      parsed = parseAiJson(content);
+    } catch {
+      continue;
+    }
+
+    const normalized = normalizeGeneratedArticle(parsed, params.fallbackTitle, params.locale, params.format, {
+      sourceText: params.sourceText,
+      trendQuery: params.trendQuery,
+    });
 
     if (!normalized) continue;
 
@@ -833,27 +876,37 @@ async function generateAndPublishSingle(params: {
   }
 
   const sourceText = await enrichSourceText(params.supabase, params.rawItem);
+  const normalizedFormat = adaptFormatForSourceDepth(
+    params.articleFormat,
+    params.rawItem,
+    sourceText,
+  );
+  if (normalizedFormat !== params.articleFormat) {
+    console.log(
+      `  ↪ format ${params.articleFormat} → ${normalizedFormat} (krótkie źródło: ${sourceText.length}ch)`,
+    );
+  }
   const angle = pickEditorialAngle(
     category,
-    params.articleFormat,
+    normalizedFormat,
     params.rawItem.id,
     sourceText.length,
   );
 
   console.log(
-    `→ ${params.rawItem.title.slice(0, 70)}… [${params.articleFormat}${angle ? `, ${angle}` : ""}, ${params.rawItem.sources.type}, ${sourceText.length}ch]`,
+    `→ ${params.rawItem.title.slice(0, 70)}… [${normalizedFormat}${angle ? `, ${angle}` : ""}, ${params.rawItem.sources.type}, ${sourceText.length}ch]`,
   );
 
   const { article: generatedItem, tokensUsed } = await generateArticleDraft({
     locale,
     category,
-    format: params.articleFormat,
+    format: normalizedFormat,
     buildPrompt: (strictLocale) =>
       buildSingleArticlePrompt(
         locale,
         category,
         toPromptItem(params.rawItem, sourceText),
-        params.articleFormat,
+        normalizedFormat,
         { angle, strictLocale },
       ),
     fallbackTitle: params.rawItem.title,

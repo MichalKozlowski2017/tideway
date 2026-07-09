@@ -115,6 +115,13 @@ export function buildSingleArticlePrompt(
   const langRule = options.strictLocale
     ? `CRITICAL: Every field (headline, lead, body, highlights, why_it_matters, tags) MUST be written entirely in ${lang}. Mixed language = invalid.`
     : `Write the entire article in ${lang} only — headline, lead, body, highlights, why_it_matters, and tags. Never mix languages.`;
+  const polishStyleRule =
+    locale === "pl"
+      ? `Polish style guardrails:
+- Use natural Polish phrasing; do NOT produce literal EN->PL calques.
+- Do NOT inflect English event names (bad: "World Cupa", "Premier League'u"). Prefer Polish forms/shortcuts (e.g. "MŚ", "Liga Mistrzów") or keep proper names unchanged.
+- Lead and why_it_matters must include at least one concrete fact (name, score, date, number, or place).`
+      : "";
 
   const sourceNote =
     locale === "pl" && !matchesLocale(item.title, "pl")
@@ -131,6 +138,7 @@ Shape structure and emphasis around this angle. Do not invent facts not present 
 ${EDITORIAL_VOICE}
 ${sourceNote}
 ${langRule}
+${polishStyleRule}
 ${angleBlock}
 Category: ${category}
 Source: ${item.sourceLabel} (${item.sourceType})
@@ -139,7 +147,7 @@ Required format: "${format}"
 
 ${FORMAT_GUIDE[format]}
 
-Fact rule: Use ONLY facts present in Details below. Do not invent numbers, dates, company names, or quotes.
+Fact rule: Use ONLY facts present in Details below. Do not invent numbers, dates, company names, or quotes. If Details are thin, keep claims conservative and avoid grand conclusions.
 
 ${HEADLINE_RULES}
 
@@ -195,6 +203,13 @@ export function buildSynthesisPrompt(
   const langRule = options.strictLocale
     ? `CRITICAL: Every field MUST be written entirely in ${lang}.`
     : `Write the entire article in ${lang} only.`;
+  const polishStyleRule =
+    locale === "pl"
+      ? `Polish style guardrails:
+- Use idiomatic Polish, avoid literal EN->PL translations.
+- Do NOT inflect English event names (e.g. never "World Cupa"); use Polish equivalents when possible.
+- In lead and why_it_matters include concrete facts from sources (names, dates, counts).`
+      : "";
 
   const angleBlock = options.angle
     ? `\nEditorial angle: "${options.angle}"
@@ -216,6 +231,7 @@ ${item.description}`,
   return `You are a ${lang} editor. Synthesize ${items.length} related sources into ONE original article — not three summaries stitched together.
 ${EDITORIAL_VOICE}
 ${langRule}
+${polishStyleRule}
 ${angleBlock}
 Category: ${category}
 Required format: "synthesis"
@@ -299,6 +315,13 @@ export function buildTrendArticlePrompt(
   const langRule = options.strictLocale
     ? `CRITICAL: Every field MUST be written entirely in ${lang}.`
     : `Write the entire article in ${lang} only.`;
+  const polishStyleRule =
+    locale === "pl"
+      ? `Polish style guardrails:
+- Use idiomatic Polish; avoid literal EN->PL calques.
+- Never inflect English event names (bad: "World Cupa"). Prefer Polish equivalents ("MŚ") or unchanged proper names.
+- Lead and why_it_matters must contain concrete facts, not generic filler.`
+      : "";
 
   const angleBlock = options.angle
     ? `\nEditorial angle: "${options.angle}"
@@ -308,6 +331,7 @@ ${getEditorialAngleGuide(options.angle)}\n`
   return `You are a ${lang} editor at Tideway. A rising Google search query needs a dedicated article TODAY.
 ${EDITORIAL_VOICE}
 ${langRule}
+${polishStyleRule}
 ${angleBlock}
 Category: ${category}
 Search query (write FOR this — the article must answer THIS exact query): ${query}
