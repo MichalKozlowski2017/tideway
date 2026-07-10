@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { cleanupRawItems } from "@/lib/articles/cleanup-raw-items";
 import { finishJob, startJob } from "@/lib/ai/generate";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
+import { isProjectShutdown, projectShutdownResponse } from "@/lib/utils/shutdown";
 
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
+  if (isProjectShutdown()) return projectShutdownResponse();
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

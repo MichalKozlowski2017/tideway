@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { ShutdownBanner } from "@/components/shutdown-banner";
 import { SiteFooter } from "@/components/site-footer";
 import { SITE_NAME, RSS_FEED_PATH, siteUrl } from "@/lib/site";
 import { ui } from "@/lib/i18n/config";
@@ -23,6 +24,11 @@ export const metadata: Metadata = {
   },
   description: ui.pl.homeDescription,
   metadataBase: new URL(siteUrl()),
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
   alternates: {
     types: {
       "application/rss+xml": RSS_FEED_PATH,
@@ -49,6 +55,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
+        <ShutdownBanner />
         {children}
         <SiteFooter />
         <Analytics />

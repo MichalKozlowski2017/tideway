@@ -6,10 +6,12 @@ import {
 } from "@/lib/ai/generate";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
 import { cronAiDisabledResponse, isCronAiEnabled } from "@/lib/utils/cron-ai";
+import { isProjectShutdown, projectShutdownResponse } from "@/lib/utils/shutdown";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  if (isProjectShutdown()) return projectShutdownResponse();
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

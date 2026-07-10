@@ -8,11 +8,13 @@ import { activeLocales } from "@/lib/i18n/config";
 import { MAIN_CATEGORIES } from "@/lib/types";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
 import { cronAiDisabledResponse, isCronAiEnabled } from "@/lib/utils/cron-ai";
+import { isProjectShutdown, projectShutdownResponse } from "@/lib/utils/shutdown";
 
 const LOCALES = activeLocales;
 const CATEGORIES = MAIN_CATEGORIES;
 
 export async function POST(request: NextRequest) {
+  if (isProjectShutdown()) return projectShutdownResponse();
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
