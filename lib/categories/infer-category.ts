@@ -1,9 +1,23 @@
 import type { Category } from "@/lib/types";
 
+const GAMING_HOST_FRAGMENTS = [
+  "gry-online.pl",
+  "eurogamer.",
+  "polygon.com",
+  "pcgamer.com",
+  "gamespot.com",
+  "ign.com",
+  "rockpapershotgun.com",
+  "kotaku.com",
+  "destructoid.com",
+  "gamesSpot.com",
+];
+
 const GAMING_KEYWORDS = [
-  "gra ",
-  "gry ",
-  "gier ",
+  " gra ",
+  " gry ",
+  " gier ",
+  " grę ",
   "game",
   "gaming",
   "gamer",
@@ -39,6 +53,15 @@ const GAMING_KEYWORDS = [
   "gameplay",
   "konsole",
   "konsol",
+  " rpg",
+  "mmorpg",
+  "gamespass",
+  "gamescom",
+  "e3 ",
+  "steam deck",
+  "mass effect",
+  "archetype",
+  "bioware",
 ];
 
 const TECH_KEYWORDS = [
@@ -47,7 +70,6 @@ const TECH_KEYWORDS = [
   "starliner",
   "spacex",
   "iss",
-  "kosmicz",
   "satelit",
   "rakiet",
   "netflix",
@@ -68,11 +90,9 @@ const TECH_KEYWORDS = [
   "zwiastun",
   "binge",
   "anime",
-  "remake",
   "blu-ray",
   "dvd",
   "ekranizac",
-  "adaptacj",
   "platforma vod",
   "elektronik",
   "półprzewodnik",
@@ -192,6 +212,9 @@ function categoryFromUrl(url: string): Category | null {
   try {
     const host = new URL(url).hostname.toLowerCase();
     if (host.includes("benchmark.pl")) return "tech";
+    if (GAMING_HOST_FRAGMENTS.some((fragment) => host.includes(fragment.toLowerCase()))) {
+      return "gaming";
+    }
     return null;
   } catch {
     return null;
@@ -208,25 +231,28 @@ type InferCategoryInput = {
 };
 
 /**
- * Gaming RSS feeds (benchmark.pl, broad newsroom posts) often carry tech news.
- * Reclassify when content signals clearly point elsewhere.
+ * Gaming RSS feeds sometimes carry non-gaming news (e.g. benchmark.pl).
+ * Dedicated gaming hosts stay in gaming; only reclassify on a clear signal.
  */
 export function inferArticleCategory(input: InferCategoryInput): Category {
   const urlOverride = categoryFromUrl(input.sourceUrl);
+  // Dedicated gaming outlets should not flip to tech/ai on weak keywords
+  // like "kosmiczne" (space RPG) matching leftover tech/sci-fi stems.
+  if (urlOverride === "gaming") return "gaming";
   if (urlOverride) return urlOverride;
 
   if (input.sourceCategory !== "gaming") {
     return input.sourceCategory;
   }
 
-  const text = [
+  const text = ` ${[
     input.sourceTitle,
     input.headline,
     input.lead,
     ...input.tags,
   ]
     .join(" ")
-    .toLowerCase();
+    .toLowerCase()} `;
 
   const gaming = scoreKeywords(text, GAMING_KEYWORDS);
   const scores: Array<{ category: Category; score: number }> = [
@@ -245,8 +271,8 @@ export function inferArticleCategory(input: InferCategoryInput): Category {
   if (best.score === 0) return input.sourceCategory;
   if (best.category === "gaming") return "gaming";
 
-  // Require a clear signal: winner beats gaming and has at least one hit
-  if (best.score >= gaming + 1 || (gaming === 0 && best.score >= 1)) {
+  // Stricter than before: leave gaming only with a clear margin over gaming signals
+  if (best.score >= gaming + 2 || (gaming === 0 && best.score >= 2)) {
     if (
       second &&
       second.score === best.score &&

@@ -94,6 +94,38 @@ export function titleSimilarity(a: string, b: string): number {
 const SIMILAR_STORY_THRESHOLD = 0.38;
 const SIMILAR_STORY_LOOKBACK_MS = 72 * 60 * 60 * 1000;
 
+/** Fuzzy token match (exodus/exodus, effect/effecta) for cross-language titles. */
+function tokensShareFuzzy(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 5 || b.length < 5) return false;
+  return a.startsWith(b) || b.startsWith(a);
+}
+
+function distinctiveSharedTokenCount(a: string, b: string): number {
+  const tokensA = [...tokenizeForSimilarity(a)].filter((token) => token.length >= 5);
+  const tokensB = [...tokenizeForSimilarity(b)].filter((token) => token.length >= 5);
+  let shared = 0;
+  const used = new Set<number>();
+  for (const tokenA of tokensA) {
+    const index = tokensB.findIndex(
+      (tokenB, i) => !used.has(i) && tokensShareFuzzy(tokenA, tokenB),
+    );
+    if (index >= 0) {
+      used.add(index);
+      shared += 1;
+    }
+  }
+  return shared;
+}
+
+/** Same story across PL/EN wording or category remaps. */
+export function isLikelySameStory(a: string, b: string): boolean {
+  if (!a.trim() || !b.trim()) return false;
+  if (titleSimilarity(a, b) >= SIMILAR_STORY_THRESHOLD) return true;
+  // e.g. both mention "Exodus" + "Mass Effect" despite low Jaccard
+  return distinctiveSharedTokenCount(a, b) >= 2;
+}
+
 export async function claimRawItems(sql: Sql, ids: string[]): Promise<boolean> {
   for (const id of ids) {
     const rows = await sql.query(
@@ -147,12 +179,13 @@ export async function findDuplicateArticle(
   const normalizedUrl = normalizeSourceUrl(params.sourceUrl);
   const since = new Date(Date.now() - SIMILAR_STORY_LOOKBACK_MS).toISOString();
 
+  // Cross-category: remaps (gaming→tech) must still see the first article.
   const recent = (await sql.query(
     `SELECT id, slug, headline, source_item_ids FROM articles
-     WHERE locale = $1 AND category = $2 AND published_at >= $3
+     WHERE locale = $1 AND published_at >= $2
      ORDER BY published_at DESC
-     LIMIT 40`,
-    [params.locale, params.category, since],
+     LIMIT 80`,
+    [params.locale, since],
   )) as Array<{
     id: string;
     slug: string;
@@ -176,7 +209,16 @@ export async function findDuplicateArticle(
     }
   }
 
+  const candidateTitles = [params.sourceTitle, params.headline]
+    .filter((value): value is string => Boolean(value?.trim()));
+
   for (const article of recent) {
+    for (const title of candidateTitles) {
+      if (isLikelySameStory(title, article.headline)) {
+        return { id: article.id, slug: article.slug };
+      }
+    }
+
     for (const sourceId of article.source_item_ids ?? []) {
       const source = sourceTitlesById.get(sourceId);
       if (!source) continue;
@@ -188,10 +230,10 @@ export async function findDuplicateArticle(
         return { id: article.id, slug: article.slug };
       }
 
-      if (
-        titleSimilarity(params.sourceTitle, source.title) >= SIMILAR_STORY_THRESHOLD
-      ) {
-        return { id: article.id, slug: article.slug };
+      for (const title of candidateTitles) {
+        if (isLikelySameStory(title, source.title)) {
+          return { id: article.id, slug: article.slug };
+        }
       }
     }
   }
@@ -241,10 +283,7 @@ export async function hasExistingArticleForItem(
   for (const row of recentRaw) {
     if (normalizeSourceUrl(row.url) === normalizedUrl) return true;
     if (fingerprint && storyFingerprint(row.url) === fingerprint) return true;
-    if (
-      row.status !== "pending" &&
-      titleSimilarity(item.title, row.title) >= SIMILAR_STORY_THRESHOLD
-    ) {
+    if (row.status !== "pending" && isLikelySameStory(item.title, row.title)) {
       return true;
     }
   }
