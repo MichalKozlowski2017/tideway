@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { describeAiSetup, getAiProvider, getAiModel } from "@/lib/ai/client";
 import { ARTICLES_PER_BATCH } from "@/lib/generation/batch-runner";
-import { getSupabaseAdmin, hasSupabaseConfig } from "@/lib/db/supabase";
+import { getSql, hasDatabaseConfig } from "@/lib/db/client";
 import { getLatestJobStatus } from "@/lib/db/queries";
 import {
   isLocalPanelEnabled,
@@ -18,16 +18,26 @@ export async function GET(request: NextRequest) {
   let processing = 0;
   let failed = 0;
 
-  if (hasSupabaseConfig()) {
-    const sb = getSupabaseAdmin();
-    const [pendingRes, processingRes, failedRes] = await Promise.all([
-      sb.from("raw_items").select("*", { count: "exact", head: true }).eq("status", "pending"),
-      sb.from("raw_items").select("*", { count: "exact", head: true }).eq("status", "processing"),
-      sb.from("raw_items").select("*", { count: "exact", head: true }).eq("status", "failed"),
+  if (hasDatabaseConfig()) {
+    const sql = getSql();
+    const [pendingRows, processingRows, failedRows] = await Promise.all([
+      sql.query(
+        `SELECT count(*)::int AS count FROM raw_items WHERE status = $1`,
+        ["pending"],
+      ),
+      sql.query(
+        `SELECT count(*)::int AS count FROM raw_items WHERE status = $1`,
+        ["processing"],
+      ),
+      sql.query(
+        `SELECT count(*)::int AS count FROM raw_items WHERE status = $1`,
+        ["failed"],
+      ),
     ]);
-    pending = pendingRes.count ?? 0;
-    processing = processingRes.count ?? 0;
-    failed = failedRes.count ?? 0;
+    pending = (pendingRows[0] as { count: number } | undefined)?.count ?? 0;
+    processing =
+      (processingRows[0] as { count: number } | undefined)?.count ?? 0;
+    failed = (failedRows[0] as { count: number } | undefined)?.count ?? 0;
   }
 
   const jobs = await getLatestJobStatus();

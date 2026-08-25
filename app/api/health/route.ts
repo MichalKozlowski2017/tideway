@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { hasSupabaseConfig } from "@/lib/db/supabase";
+import { hasDatabaseConfig } from "@/lib/db/client";
 import { getLatestJobStatus } from "@/lib/db/queries";
 
 export async function GET() {
   try {
-    if (!hasSupabaseConfig()) {
+    if (!hasDatabaseConfig()) {
       return NextResponse.json({
         status: "degraded",
-        message: "Supabase not configured",
+        message: "Database not configured",
       });
     }
 

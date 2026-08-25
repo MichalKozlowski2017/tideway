@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { getSql } from "@/lib/db/client";
 import { fetchGoogleTrendsItems } from "@/lib/sources/google-trends";
 import { fetchHackerNewsItems } from "@/lib/sources/hacker-news";
 import { fetchLobstersItems } from "@/lib/sources/lobsters";
@@ -31,24 +31,30 @@ async function fetchFromSource(source: Source): Promise<NormalizedItem[]> {
   }
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: string }).code === "23505"
+  );
+}
+
 export async function ingestAllSources(): Promise<{
   processed: number;
   inserted: number;
   skipped: number;
 }> {
-  const supabase = getSupabaseAdmin();
-  const { data: sources, error } = await supabase
-    .from("sources")
-    .select("*")
-    .eq("enabled", true);
-
-  if (error) throw error;
+  const sql = getSql();
+  const sources = (await sql.query(
+    `SELECT * FROM sources WHERE enabled = true`,
+  )) as Source[];
 
   let processed = 0;
   let inserted = 0;
   let skipped = 0;
 
-  for (const source of (sources ?? []) as Source[]) {
+  for (const source of sources) {
     let items: NormalizedItem[];
     try {
       items = await fetchFromSource(source);
@@ -61,18 +67,17 @@ export async function ingestAllSources(): Promise<{
       processed += 1;
       const hash = contentHash(item.title, item.url);
 
-      const { data: existingHash } = await supabase
-        .from("raw_items")
-        .select("id")
-        .eq("content_hash", hash)
-        .maybeSingle();
+      const existingHash = await sql.query(
+        `SELECT id FROM raw_items WHERE content_hash = $1 LIMIT 1`,
+        [hash],
+      );
 
-      if (existingHash) {
+      if (existingHash.length) {
         skipped += 1;
         continue;
       }
 
-      if (await hasRecentNormalizedUrl(supabase, item.url)) {
+      if (await hasRecentNormalizedUrl(sql, item.url)) {
         skipped += 1;
         continue;
       }
@@ -81,29 +86,32 @@ export async function ingestAllSources(): Promise<{
         (await enrichItemImageUrl(item)) ?? item.imageUrl ?? null;
       const description = await enrichDescription(item);
 
-      const { error: insertError } = await supabase.from("raw_items").insert({
-        source_id: source.id,
-        external_id: item.externalId,
-        title: item.title,
-        description,
-        url: item.url,
-        image_url: imageUrl,
-        engagement_score: item.engagementScore,
-        published_at: item.publishedAt?.toISOString() ?? null,
-        content_hash: hash,
-        status: "pending",
-      });
-
-      if (insertError) {
-        if (insertError.code === "23505") {
+      try {
+        await sql.query(
+          `INSERT INTO raw_items (
+             source_id, external_id, title, description, url, image_url,
+             engagement_score, published_at, content_hash, status
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')`,
+          [
+            source.id,
+            item.externalId,
+            item.title,
+            description,
+            item.url,
+            imageUrl,
+            item.engagementScore,
+            item.publishedAt?.toISOString() ?? null,
+            hash,
+          ],
+        );
+        inserted += 1;
+      } catch (insertError) {
+        if (isUniqueViolation(insertError)) {
           skipped += 1;
         } else {
           console.error("Insert error:", insertError);
         }
-        continue;
       }
-
-      inserted += 1;
     }
   }
 
@@ -115,15 +123,22 @@ export async function getSourceItemsForArticle(
 ): Promise<Array<{ title: string; url: string }>> {
   if (sourceItemIds.length === 0) return [];
 
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("raw_items")
-    .select("title, url, sources(type, config)")
-    .in("id", sourceItemIds);
+  const sql = getSql();
+  const data = (await sql.query(
+    `SELECT r.title, r.url, s.type, s.config
+     FROM raw_items r
+     JOIN sources s ON s.id = r.source_id
+     WHERE r.id = ANY($1::uuid[])`,
+    [sourceItemIds],
+  )) as Array<{
+    title: string;
+    url: string;
+    type: Source["type"];
+    config: Source["config"];
+  }>;
 
-  return (data ?? []).map((row) => {
-    const source = row.sources as unknown as Pick<Source, "type" | "config"> | null;
-    const label = source ? buildSourceLabel(source) : "Source";
+  return data.map((row) => {
+    const label = buildSourceLabel({ type: row.type, config: row.config });
     return {
       title: `${row.title} (${label})`,
       url: row.url,

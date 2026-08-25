@@ -11,7 +11,7 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
   process.env[trimmed.slice(0, eq)] ??= trimmed.slice(eq + 1);
 }
 
-import { getSupabaseAdmin } from "../lib/db/supabase.ts";
+import { getSql } from "../lib/db/client.ts";
 import {
   normalizeSourceUrl,
   storyFingerprint,
@@ -40,21 +40,21 @@ function pickKeeper(articles: ArticleRow[]): ArticleRow {
 }
 
 async function main() {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
   const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
   const dryRun = process.argv.includes("--dry-run");
 
-  const { data: articles, error } = await supabase
-    .from("articles")
-    .select("id, slug, headline, locale, category, published_at, source_item_ids")
-    .eq("is_published", true)
-    .eq("article_type", "trend_item")
-    .gte("published_at", since)
-    .order("published_at", { ascending: false });
+  const articles = (await sql.query(
+    `SELECT id, slug, headline, locale, category, published_at, source_item_ids
+     FROM articles
+     WHERE is_published = true
+       AND article_type = 'trend_item'
+       AND published_at >= $1
+     ORDER BY published_at DESC`,
+    [since],
+  )) as ArticleRow[];
 
-  if (error) throw error;
-
-  const rows = (articles ?? []) as ArticleRow[];
+  const rows = articles;
   const toUnpublish = new Set<string>();
   const reasons = new Map<string, string>();
   const redirectTargets = new Map<string, string>();
@@ -87,11 +87,11 @@ async function main() {
   const sourceIds = [...new Set(rows.flatMap((a) => a.source_item_ids ?? []))];
   const sourceMeta = new Map<string, { title: string; url: string }>();
   if (sourceIds.length) {
-    const { data: rawRows } = await supabase
-      .from("raw_items")
-      .select("id, title, url")
-      .in("id", sourceIds);
-    for (const row of rawRows ?? []) {
+    const rawRows = (await sql.query(
+      `SELECT id, title, url FROM raw_items WHERE id = ANY($1::uuid[])`,
+      [sourceIds],
+    )) as Array<{ id: string; title: string; url: string }>;
+    for (const row of rawRows) {
       sourceMeta.set(row.id, { title: row.title, url: row.url });
     }
   }
@@ -172,12 +172,10 @@ async function main() {
   }
 
   const ids = victims.map((a) => a.id);
-  const { error: updateError } = await supabase
-    .from("articles")
-    .update({ is_published: false })
-    .in("id", ids);
-
-  if (updateError) throw updateError;
+  await sql.query(
+    `UPDATE articles SET is_published = false WHERE id = ANY($1::uuid[])`,
+    [ids],
+  );
   console.log(`\nUnpublished ${ids.length} duplicate article(s).`);
   console.log(
     "Run: npx tsx scripts/audit-article-404s.mts --write  (refresh 301 redirects)",

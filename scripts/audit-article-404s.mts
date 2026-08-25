@@ -11,7 +11,7 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
   process.env[trimmed.slice(0, eq)] ??= trimmed.slice(eq + 1);
 }
 
-import { getSupabaseAdmin } from "../lib/db/supabase.ts";
+import { getSql } from "../lib/db/client.ts";
 import { recordArticleSlugRedirect } from "../lib/seo/article-redirect-store.ts";
 import { ARTICLE_SLUG_REDIRECTS } from "../lib/seo/article-redirects.ts";
 import { resolveArticleRedirectSlug } from "../lib/seo/resolve-article-redirect.ts";
@@ -20,18 +20,15 @@ const writeRedirects = process.argv.includes("--write");
 const backfillSuffix = process.argv.includes("--backfill-suffix");
 
 async function main() {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
 
   if (backfillSuffix) {
-    const { data: published, error } = await supabase
-      .from("articles")
-      .select("slug")
-      .eq("locale", "pl")
-      .eq("is_published", true);
+    const published = (await sql.query(
+      `SELECT slug FROM articles WHERE locale = $1 AND is_published = true`,
+      ["pl"],
+    )) as Array<{ slug: string }>;
 
-    if (error) throw error;
-
-    const live = new Set((published ?? []).map((row) => row.slug));
+    const live = new Set(published.map((row) => row.slug));
     let suffixRedirects = 0;
 
     for (const slug of live) {
@@ -46,18 +43,21 @@ async function main() {
     console.log(`Backfilled ${suffixRedirects} numeric-suffix redirect(s).`);
   }
 
-  const { data: unpublished, error: unpubError } = await supabase
-    .from("articles")
-    .select("slug, category, source_item_ids")
-    .eq("locale", "pl")
-    .eq("is_published", false);
-
-  if (unpubError) throw unpubError;
+  const unpublished = (await sql.query(
+    `SELECT slug, category, source_item_ids
+     FROM articles
+     WHERE locale = $1 AND is_published = false`,
+    ["pl"],
+  )) as Array<{
+    slug: string;
+    category: string;
+    source_item_ids: string[];
+  }>;
 
   const generated: Record<string, string> = { ...ARTICLE_SLUG_REDIRECTS };
   const unresolved: string[] = [];
 
-  for (const article of unpublished ?? []) {
+  for (const article of unpublished) {
     const target = await resolveArticleRedirectSlug("pl", article.slug, {
       skipStatic: true,
     });
@@ -75,7 +75,7 @@ async function main() {
     Object.entries(generated).filter(([, v]) => !v.startsWith("__category__:")),
   );
 
-  console.log(`Unpublished articles: ${unpublished?.length ?? 0}`);
+  console.log(`Unpublished articles: ${unpublished.length}`);
   console.log(`Static + generated article redirects: ${Object.keys(articleRedirects).length}`);
   console.log(`Unresolved (no article target): ${unresolved.length}`);
   if (unresolved.length) {

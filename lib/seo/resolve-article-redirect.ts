@@ -1,5 +1,5 @@
 import { categoryPath } from "@/lib/i18n/config";
-import { getSupabaseAdmin, hasSupabaseConfig } from "@/lib/db/supabase";
+import { getSql, hasDatabaseConfig } from "@/lib/db/client";
 import { getStoredArticleRedirectSlug } from "@/lib/seo/article-redirect-store";
 import { ARTICLE_SLUG_REDIRECTS } from "@/lib/seo/article-redirects";
 import { categorySlug, type Category, type Locale } from "@/lib/types";
@@ -14,17 +14,14 @@ async function findPublishedSlug(
   locale: Locale,
   slug: string,
 ): Promise<string | null> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("articles")
-    .select("slug")
-    .eq("locale", locale)
-    .eq("slug", slug)
-    .eq("is_published", true)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data?.slug ?? null;
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT slug FROM articles
+     WHERE locale = $1 AND slug = $2 AND is_published = true
+     LIMIT 1`,
+    [locale, slug],
+  );
+  return (rows[0] as { slug: string } | undefined)?.slug ?? null;
 }
 
 /** When `foo` 404s but `foo-1` exists (ensureUniqueSlug), send users to the live URL. */
@@ -34,19 +31,15 @@ async function resolveNumericSuffixFallback(
 ): Promise<string | null> {
   if (NUMERIC_SUFFIX.test(slug)) return null;
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("articles")
-    .select("slug")
-    .eq("locale", locale)
-    .eq("is_published", true)
-    .like("slug", `${slug}-%`)
-    .order("published_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data?.slug ?? null;
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT slug FROM articles
+     WHERE locale = $1 AND is_published = true AND slug LIKE $2
+     ORDER BY published_at DESC
+     LIMIT 1`,
+    [locale, `${slug}-%`],
+  );
+  return (rows[0] as { slug: string } | undefined)?.slug ?? null;
 }
 
 export async function resolveArticleRedirectSlug(
@@ -68,40 +61,39 @@ export async function resolveArticleRedirectSlug(
     if (live) return { kind: "article", slug: live };
   }
 
-  if (!hasSupabaseConfig()) return null;
+  if (!hasDatabaseConfig()) return null;
 
   const suffixTarget = await resolveNumericSuffixFallback(locale, slug);
   if (suffixTarget) {
     return { kind: "article", slug: suffixTarget };
   }
 
-  const supabase = getSupabaseAdmin();
-  const { data: dead, error } = await supabase
-    .from("articles")
-    .select("slug, category, source_item_ids")
-    .eq("locale", locale)
-    .eq("slug", slug)
-    .eq("is_published", false)
-    .maybeSingle();
+  const sql = getSql();
+  const deadRows = await sql.query(
+    `SELECT slug, category, source_item_ids FROM articles
+     WHERE locale = $1 AND slug = $2 AND is_published = false
+     LIMIT 1`,
+    [locale, slug],
+  );
+  const dead = deadRows[0] as
+    | { slug: string; category: string; source_item_ids: string[] }
+    | undefined;
 
-  if (error) throw error;
   if (!dead) return null;
 
   const sourceId = dead.source_item_ids?.[0];
   if (sourceId) {
-    const { data: published, error: pubError } = await supabase
-      .from("articles")
-      .select("slug")
-      .eq("locale", locale)
-      .eq("is_published", true)
-      .contains("source_item_ids", [sourceId])
-      .order("published_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (pubError) throw pubError;
-    if (published?.slug) {
-      return { kind: "article", slug: published.slug };
+    const published = await sql.query(
+      `SELECT slug FROM articles
+       WHERE locale = $1 AND is_published = true
+         AND source_item_ids @> ARRAY[$2]::uuid[]
+       ORDER BY published_at DESC
+       LIMIT 1`,
+      [locale, sourceId],
+    );
+    const publishedSlug = (published[0] as { slug: string } | undefined)?.slug;
+    if (publishedSlug) {
+      return { kind: "article", slug: publishedSlug };
     }
   }
 

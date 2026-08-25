@@ -1,36 +1,33 @@
 # Tideway
 
-> **Projekt zakończony (lipiec 2026).** Serwis nie publikuje nowych treści. Repozytorium zarchiwizowane jako portfolio techniczne.
-
-Automatyczny serwis podsumowań trendów (PL + EN). Pobierał dane z RSS, Hacker News i innych źródeł, generował streszczenia przez AI i publikował artykuły.
-
-## Zamknięcie
-
-| Krok | Status |
-|------|--------|
-| Crony wyłączone (`vercel.json`) | ✅ |
-| `noindex` + pusty sitemap | ✅ |
-| Endpointy cron → HTTP 410 na produkcji | ✅ |
-| Supabase paused | ręcznie w dashboardzie |
-| Vercel project | usuń w panelu po ostatnim deployu |
-| OpenAI / Reddit keys | revoke w panelach dostawców |
-
-Lokalny dev: ustaw `PROJECT_SHUTDOWN=false` w `.env.local` tylko jeśli potrzebujesz uruchomić pipeline archiwalnie.
+Automatyczny serwis podsumowań trendów (PL + EN). Pobiera dane z RSS, Hacker News i innych źródeł, generuje streszczenia przez AI i publikuje artykuły.
 
 ## Stack
 
 - **Next.js 16** (App Router, ISR)
-- **Supabase** (Postgres)
+- **Neon** (Postgres)
 - **OpenAI** lub **lokalny Ollama** (`AI_PROVIDER=openai|local`)
 
-## Quick start (archiwum)
+## Quick start
 
 ```bash
 cp .env.local.example .env.local
+# Uzupełnij DATABASE_URL (Neon) oraz OPENAI_API_KEY / CRON_SECRET
 npm install
+npm run db:migrate   # opcjonalnie — schemat + seed na świeżym Neon
 npm run dev
 ```
 
-## Licencja
+Panel lokalny: http://localhost:3000/panel
 
-Kod pozostaje w repozytorium do wglądu; produkt `tideway.pl` nie jest utrzymywany.
+Health: http://localhost:3000/api/health
+
+## Baza (Neon)
+
+Migracje SQL żyją w `supabase/migrations/` (historyczna nazwa katalogu). Aplikacja łączy się przez `DATABASE_URL` (`@neondatabase/serverless`).
+
+```bash
+DATABASE_URL=... npm run db:migrate
+```
+
+Szczegóły: [docs/NEON.md](docs/NEON.md)

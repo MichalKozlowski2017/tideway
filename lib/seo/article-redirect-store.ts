@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, hasSupabaseConfig } from "@/lib/db/supabase";
+import { getSql, hasDatabaseConfig } from "@/lib/db/client";
 import type { Locale } from "@/lib/types";
 
 export async function recordArticleSlugRedirect(
@@ -6,37 +6,30 @@ export async function recordArticleSlugRedirect(
   fromSlug: string,
   toSlug: string,
 ): Promise<void> {
-  if (!hasSupabaseConfig() || fromSlug === toSlug) return;
+  if (!hasDatabaseConfig() || fromSlug === toSlug) return;
 
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("article_slug_redirects").upsert(
-    {
-      locale,
-      from_slug: fromSlug,
-      to_slug: toSlug,
-    },
-    { onConflict: "locale,from_slug" },
+  const sql = getSql();
+  await sql.query(
+    `INSERT INTO article_slug_redirects (locale, from_slug, to_slug)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (locale, from_slug)
+     DO UPDATE SET to_slug = EXCLUDED.to_slug`,
+    [locale, fromSlug, toSlug],
   );
-
-  if (error?.code === "PGRST205") return;
-  if (error) throw error;
 }
 
 export async function getStoredArticleRedirectSlug(
   locale: Locale,
   slug: string,
 ): Promise<string | null> {
-  if (!hasSupabaseConfig()) return null;
+  if (!hasDatabaseConfig()) return null;
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("article_slug_redirects")
-    .select("to_slug")
-    .eq("locale", locale)
-    .eq("from_slug", slug)
-    .maybeSingle();
-
-  if (error?.code === "PGRST205") return null;
-  if (error) throw error;
-  return data?.to_slug ?? null;
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT to_slug FROM article_slug_redirects
+     WHERE locale = $1 AND from_slug = $2
+     LIMIT 1`,
+    [locale, slug],
+  );
+  return (rows[0] as { to_slug: string } | undefined)?.to_slug ?? null;
 }

@@ -10,28 +10,25 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
 }
 
 import { matchesLocale } from "../lib/ai/locale-check.ts";
-import { getSupabaseAdmin } from "../lib/db/supabase.ts";
+import { getSql } from "../lib/db/client.ts";
 import { recordArticleSlugRedirect } from "../lib/seo/article-redirect-store.ts";
 import { resolveArticleRedirectSlug } from "../lib/seo/resolve-article-redirect.ts";
 
 console.log("Tideway — pipeline maintenance…\n");
 
-const supabase = getSupabaseAdmin();
+const sql = getSql();
 
-const { data: unpublished, error: unpublishedError } = await supabase
-  .from("articles")
-  .select("id")
-  .eq("is_published", false);
+const unpublished = (await sql.query(
+  `SELECT id FROM articles WHERE is_published = false`,
+)) as Array<{ id: string }>;
 
-if (unpublishedError) throw unpublishedError;
-
-if (unpublished?.length) {
+if (unpublished.length) {
   for (const row of unpublished) {
-    const { data: article } = await supabase
-      .from("articles")
-      .select("slug")
-      .eq("id", row.id)
-      .maybeSingle();
+    const articleRows = (await sql.query(
+      `SELECT slug FROM articles WHERE id = $1 LIMIT 1`,
+      [row.id],
+    )) as Array<{ slug: string }>;
+    const article = articleRows[0];
 
     if (!article?.slug) continue;
 
@@ -44,40 +41,29 @@ if (unpublished?.length) {
   }
 
   const ids = unpublished.map((a) => a.id);
-  const { error: deleteError } = await supabase
-    .from("articles")
-    .delete()
-    .in("id", ids);
-
-  if (deleteError) throw deleteError;
+  await sql.query(`DELETE FROM articles WHERE id = ANY($1::uuid[])`, [ids]);
   console.log(`Usunięto ${ids.length} nieopublikowanych artykułów.`);
 } else {
   console.log("Brak nieopublikowanych artykułów.");
 }
 
-const { data: failed, error: failedError } = await supabase
-  .from("raw_items")
-  .select("id, title, sources(locale)")
-  .eq("status", "failed");
+const failed = (await sql.query(
+  `SELECT r.id, r.title, s.locale
+   FROM raw_items r
+   LEFT JOIN sources s ON s.id = r.source_id
+   WHERE r.status = 'failed'`,
+)) as Array<{ id: string; title: string; locale: string | null }>;
 
-if (failedError) throw failedError;
-
-const toSkip =
-  failed?.filter((row) => {
-    const locale = (row.sources as { locale?: string } | null)?.locale ?? "pl";
-    return locale === "pl" && !matchesLocale(row.title, "pl");
-  }) ?? [];
+const toSkip = failed.filter((row) => {
+  const locale = row.locale ?? "pl";
+  return locale === "pl" && !matchesLocale(row.title, "pl");
+});
 
 if (toSkip.length) {
-  const { error: skipError } = await supabase
-    .from("raw_items")
-    .update({ status: "skipped" })
-    .in(
-      "id",
-      toSkip.map((r) => r.id),
-    );
-
-  if (skipError) throw skipError;
+  await sql.query(
+    `UPDATE raw_items SET status = 'skipped' WHERE id = ANY($1::uuid[])`,
+    [toSkip.map((r) => r.id)],
+  );
   console.log(`Przeklasyfikowano ${toSkip.length} failed → skipped (źródła EN).`);
 } else {
   console.log("Brak failed EN do przeklasyfikowania.");
@@ -87,11 +73,11 @@ const statuses = ["pending", "processed", "failed", "skipped"] as const;
 const counts: Record<string, number> = {};
 
 for (const status of statuses) {
-  const { count } = await supabase
-    .from("raw_items")
-    .select("*", { count: "exact", head: true })
-    .eq("status", status);
-  counts[status] = count ?? 0;
+  const rows = await sql.query(
+    `SELECT count(*)::int AS count FROM raw_items WHERE status = $1`,
+    [status],
+  );
+  counts[status] = (rows[0] as { count: number } | undefined)?.count ?? 0;
 }
 
 console.log("\nStan raw_items:", counts);

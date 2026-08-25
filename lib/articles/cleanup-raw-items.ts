@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { getSql } from "@/lib/db/client";
 
 export type RawItemsCleanupResult = {
   deletedPending: number;
@@ -7,16 +7,13 @@ export type RawItemsCleanupResult = {
 };
 
 export async function cleanupRawItems(): Promise<RawItemsCleanupResult> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.rpc("cleanup_raw_items");
-
-  if (error) throw error;
-
-  const result = data as {
+  const sql = getSql();
+  const rows = await sql.query(`SELECT cleanup_raw_items() AS result`);
+  const result = (rows[0] as { result: {
     deleted_pending: number;
     deleted_terminal: number;
     deleted_processing: number;
-  };
+  } }).result;
 
   return {
     deletedPending: result.deleted_pending,

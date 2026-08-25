@@ -9,19 +9,24 @@ for (const line of readFileSync(resolve(process.cwd(), ".env.local"), "utf8").sp
   process.env[trimmed.slice(0, eq)] ??= trimmed.slice(eq + 1);
 }
 
-import { getSupabaseAdmin } from "../lib/db/supabase.ts";
+import { getSql } from "../lib/db/client.ts";
 
-const sb = getSupabaseAdmin();
+const sql = getSql();
 
 async function count(
   table: string,
   filter: Record<string, string | boolean> = {},
 ): Promise<number> {
-  let q = sb.from(table).select("*", { count: "exact", head: true });
-  for (const [k, v] of Object.entries(filter)) q = q.eq(k, v);
-  const { count: n, error } = await q;
-  if (error) throw error;
-  return n ?? 0;
+  const entries = Object.entries(filter);
+  const where =
+    entries.length === 0
+      ? ""
+      : ` WHERE ${entries.map(([k], i) => `${k} = $${i + 1}`).join(" AND ")}`;
+  const rows = await sql.query(
+    `SELECT count(*)::int AS count FROM ${table}${where}`,
+    entries.map(([, v]) => v),
+  );
+  return (rows[0] as { count: number } | undefined)?.count ?? 0;
 }
 
 const categories = ["ai", "gaming", "sport", "finance", "it", "tech"] as const;
@@ -46,50 +51,54 @@ for (const t of articleTypes) {
   byType[t] = await count("articles", { is_published: true, article_type: t });
 }
 
-const { data: first } = await sb
-  .from("articles")
-  .select("published_at")
-  .eq("is_published", true)
-  .order("published_at", { ascending: true })
-  .limit(1);
-const { data: latest } = await sb
-  .from("articles")
-  .select("published_at")
-  .eq("is_published", true)
-  .order("published_at", { ascending: false })
-  .limit(1);
+const first = (await sql.query(
+  `SELECT published_at FROM articles
+   WHERE is_published = true
+   ORDER BY published_at ASC
+   LIMIT 1`,
+)) as Array<{ published_at: string }>;
+const latest = (await sql.query(
+  `SELECT published_at FROM articles
+   WHERE is_published = true
+   ORDER BY published_at DESC
+   LIMIT 1`,
+)) as Array<{ published_at: string }>;
 
 const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-const articlesWeek = await count("articles", { is_published: true });
-const { count: articlesLast7d } = await sb
-  .from("articles")
-  .select("*", { count: "exact", head: true })
-  .eq("is_published", true)
-  .gte("published_at", weekAgo);
+const articlesLast7dRows = await sql.query(
+  `SELECT count(*)::int AS count FROM articles
+   WHERE is_published = true AND published_at >= $1`,
+  [weekAgo],
+);
+const articlesLast7d =
+  (articlesLast7dRows[0] as { count: number } | undefined)?.count ?? 0;
 
-const withImage = await sb
-  .from("articles")
-  .select("*", { count: "exact", head: true })
-  .eq("is_published", true)
-  .not("image_url", "is", null);
+const withImageRows = await sql.query(
+  `SELECT count(*)::int AS count FROM articles
+   WHERE is_published = true AND image_url IS NOT NULL`,
+);
+const withImage =
+  (withImageRows[0] as { count: number } | undefined)?.count ?? 0;
 
-const { data: sources } = await sb.from("sources").select("type, enabled");
+const sources = (await sql.query(
+  `SELECT type, enabled FROM sources`,
+)) as Array<{ type: string; enabled: boolean }>;
 const srcByType: Record<string, number> = {};
 let srcEnabled = 0;
-for (const s of sources ?? []) {
+for (const s of sources) {
   srcByType[s.type] = (srcByType[s.type] ?? 0) + 1;
   if (s.enabled) srcEnabled += 1;
 }
 
 const rollups = await count("daily_rollups");
 
-const { data: recentArts } = await sb
-  .from("articles")
-  .select("published_at")
-  .eq("is_published", true)
-  .gte("published_at", weekAgo);
+const recentArts = (await sql.query(
+  `SELECT published_at FROM articles
+   WHERE is_published = true AND published_at >= $1`,
+  [weekAgo],
+)) as Array<{ published_at: string }>;
 const dailyArts: Record<string, number> = {};
-for (const a of recentArts ?? []) {
+for (const a of recentArts) {
   const d = a.published_at.slice(0, 10);
   dailyArts[d] = (dailyArts[d] ?? 0) + 1;
 }
@@ -102,10 +111,10 @@ console.log(
         total: articlesTotal,
         published: articlesPublished,
         unpublished: articlesTotal - articlesPublished,
-        withImage: withImage.count ?? 0,
-        last7d: articlesLast7d ?? 0,
-        first: first?.[0]?.published_at?.slice(0, 10),
-        latest: latest?.[0]?.published_at?.slice(0, 10),
+        withImage,
+        last7d: articlesLast7d,
+        first: first[0]?.published_at?.slice(0, 10),
+        latest: latest[0]?.published_at?.slice(0, 10),
         byCategory,
         byType,
         dailyLast7d: dailyArts,
@@ -119,7 +128,7 @@ console.log(
         processing,
       },
       article_slug_redirects: redirects,
-      sources: { total: sources?.length ?? 0, enabled: srcEnabled, byType: srcByType },
+      sources: { total: sources.length, enabled: srcEnabled, byType: srcByType },
       rollups,
     },
     null,

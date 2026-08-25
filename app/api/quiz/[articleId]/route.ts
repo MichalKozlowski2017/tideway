@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQuizStats, recordQuizAttempt } from "@/lib/quiz/stats";
 import { parseQuizQuestions } from "@/lib/quiz/types";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { getSql } from "@/lib/db/client";
 
 type RouteContext = { params: Promise<{ articleId: string }> };
 
@@ -42,14 +42,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Invalid score" }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
-  const { data: article, error } = await supabase
-    .from("articles")
-    .select("id, summary, is_published")
-    .eq("id", articleId)
-    .maybeSingle();
+  const sql = getSql();
+  const rows = (await sql.query(
+    `SELECT id, summary, is_published FROM articles WHERE id = $1 LIMIT 1`,
+    [articleId],
+  )) as Array<{ id: string; summary: unknown; is_published: boolean }>;
+  const article = rows[0];
 
-  if (error || !article?.is_published) {
+  if (!article?.is_published) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

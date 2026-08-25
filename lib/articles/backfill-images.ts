@@ -4,7 +4,7 @@ import {
   isWeakPreviewImage,
 } from "@/lib/sources/extract-image";
 import type { Category } from "@/lib/types";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { getSql } from "@/lib/db/client";
 
 type ArticleRow = {
   id: string;
@@ -39,25 +39,26 @@ export async function backfillArticleImages(options?: {
   limit?: number;
   concurrency?: number;
 }) {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
   const limit = options?.limit ?? 500;
   const concurrency = options?.concurrency ?? 4;
 
-  const { data: articles, error } = await supabase
-    .from("articles")
-    .select("id, headline, category, source_item_ids")
-    .is("image_url", null)
-    .limit(limit);
+  const articles = (await sql.query(
+    `SELECT id, headline, category, source_item_ids
+     FROM articles
+     WHERE image_url IS NULL
+     LIMIT $1`,
+    [limit],
+  )) as ArticleRow[];
 
-  if (error) throw error;
-  if (!articles?.length) {
+  if (!articles.length) {
     return { processed: 0, updated: 0, failed: 0 };
   }
 
   let updated = 0;
   let failed = 0;
 
-  await mapPool(articles as ArticleRow[], concurrency, async (article) => {
+  await mapPool(articles, concurrency, async (article) => {
     const category = article.category as Category;
     const rawItemId = article.source_item_ids[0];
 
@@ -67,14 +68,15 @@ export async function backfillArticleImages(options?: {
           ? null
           : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.tech;
 
-      const { error: articleError } = await supabase
-        .from("articles")
-        .update({ image_url: imageUrl })
-        .eq("id", article.id);
-
-      if (articleError) {
+      try {
+        await sql.query(`UPDATE articles SET image_url = $1 WHERE id = $2`, [
+          imageUrl,
+          article.id,
+        ]);
+      } catch (err) {
         failed += 1;
-        console.log(`✗ ${article.headline.slice(0, 50)} — ${articleError.message}`);
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(`✗ ${article.headline.slice(0, 50)} — ${message}`);
         return;
       }
 
@@ -83,11 +85,11 @@ export async function backfillArticleImages(options?: {
       return;
     }
 
-    const { data: rawItem } = await supabase
-      .from("raw_items")
-      .select("id, url, image_url")
-      .eq("id", rawItemId)
-      .maybeSingle();
+    const rawRows = (await sql.query(
+      `SELECT id, url, image_url FROM raw_items WHERE id = $1 LIMIT 1`,
+      [rawItemId],
+    )) as Array<{ id: string; url: string; image_url: string | null }>;
+    const rawItem = rawRows[0];
 
     if (!rawItem?.url) {
       failed += 1;
@@ -96,10 +98,10 @@ export async function backfillArticleImages(options?: {
     }
 
     const imageUrl = await resolveArticleImageUrl({
-        sourceImageUrl: rawItem.image_url,
-        pageUrl: rawItem.url,
-        category,
-      });
+      sourceImageUrl: rawItem.image_url,
+      pageUrl: rawItem.url,
+      category,
+    });
 
     const fallback =
       imageUrl ??
@@ -107,22 +109,23 @@ export async function backfillArticleImages(options?: {
         ? null
         : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.tech);
 
-    const { error: articleError } = await supabase
-      .from("articles")
-      .update({ image_url: fallback })
-      .eq("id", article.id);
-
-    if (articleError) {
+    try {
+      await sql.query(`UPDATE articles SET image_url = $1 WHERE id = $2`, [
+        fallback,
+        article.id,
+      ]);
+    } catch (err) {
       failed += 1;
-      console.log(`✗ ${article.headline.slice(0, 50)} — ${articleError.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`✗ ${article.headline.slice(0, 50)} — ${message}`);
       return;
     }
 
     if (!rawItem.image_url && fallback) {
-      await supabase
-        .from("raw_items")
-        .update({ image_url: fallback })
-        .eq("id", rawItem.id);
+      await sql.query(`UPDATE raw_items SET image_url = $1 WHERE id = $2`, [
+        fallback,
+        rawItem.id,
+      ]);
     }
 
     updated += 1;
@@ -138,28 +141,30 @@ export async function replaceWeakArticleImages(options?: {
   limit?: number;
   concurrency?: number;
 }) {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
   const limit = options?.limit ?? 500;
   const concurrency = options?.concurrency ?? 4;
 
-  const { data: articles, error } = await supabase
-    .from("articles")
-    .select("id, headline, category, source_item_ids, image_url")
-    .not("image_url", "is", null)
-    .or(
-      "image_url.ilike.%opengraph.githubassets.com%,image_url.ilike.%repository-images.githubusercontent.com%",
-    )
-    .limit(limit);
+  const articles = (await sql.query(
+    `SELECT id, headline, category, source_item_ids, image_url
+     FROM articles
+     WHERE image_url IS NOT NULL
+       AND (
+         image_url ILIKE '%opengraph.githubassets.com%'
+         OR image_url ILIKE '%repository-images.githubusercontent.com%'
+       )
+     LIMIT $1`,
+    [limit],
+  )) as WeakArticleRow[];
 
-  if (error) throw error;
-  if (!articles?.length) {
+  if (!articles.length) {
     return { processed: 0, updated: 0, failed: 0 };
   }
 
   let updated = 0;
   let failed = 0;
 
-  await mapPool(articles as WeakArticleRow[], concurrency, async (article) => {
+  await mapPool(articles, concurrency, async (article) => {
     if (!isWeakPreviewImage(article.image_url)) return;
 
     const category = article.category as Category;
@@ -167,11 +172,11 @@ export async function replaceWeakArticleImages(options?: {
     let resolved: string | null = null;
 
     if (rawItemId) {
-      const { data: rawItem } = await supabase
-        .from("raw_items")
-        .select("id, url, image_url")
-        .eq("id", rawItemId)
-        .maybeSingle();
+      const rawRows = (await sql.query(
+        `SELECT id, url, image_url FROM raw_items WHERE id = $1 LIMIT 1`,
+        [rawItemId],
+      )) as Array<{ id: string; url: string; image_url: string | null }>;
+      const rawItem = rawRows[0];
 
       if (rawItem?.url) {
         resolved = await resolveArticleImageUrl({
@@ -188,14 +193,15 @@ export async function replaceWeakArticleImages(options?: {
         ? null
         : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.tech);
 
-    const { error: articleError } = await supabase
-      .from("articles")
-      .update({ image_url: imageUrl })
-      .eq("id", article.id);
-
-    if (articleError) {
+    try {
+      await sql.query(`UPDATE articles SET image_url = $1 WHERE id = $2`, [
+        imageUrl,
+        article.id,
+      ]);
+    } catch (err) {
       failed += 1;
-      console.log(`✗ ${article.headline.slice(0, 50)} — ${articleError.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`✗ ${article.headline.slice(0, 50)} — ${message}`);
       return;
     }
 
@@ -212,28 +218,31 @@ export async function replaceProfileAvatarImages(options?: {
   limit?: number;
   concurrency?: number;
 }) {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
   const limit = options?.limit ?? 500;
   const concurrency = options?.concurrency ?? 4;
 
-  const { data: articles, error } = await supabase
-    .from("articles")
-    .select("id, headline, category, source_item_ids, image_url")
-    .not("image_url", "is", null)
-    .or(
-      "image_url.ilike.%profile_image%,image_url.ilike.%gravatar.com%,image_url.ilike.%avatars.githubusercontent.com%",
-    )
-    .limit(limit);
+  const articles = (await sql.query(
+    `SELECT id, headline, category, source_item_ids, image_url
+     FROM articles
+     WHERE image_url IS NOT NULL
+       AND (
+         image_url ILIKE '%profile_image%'
+         OR image_url ILIKE '%gravatar.com%'
+         OR image_url ILIKE '%avatars.githubusercontent.com%'
+       )
+     LIMIT $1`,
+    [limit],
+  )) as BadImageArticleRow[];
 
-  if (error) throw error;
-  if (!articles?.length) {
+  if (!articles.length) {
     return { processed: 0, updated: 0, failed: 0 };
   }
 
   let updated = 0;
   let failed = 0;
 
-  await mapPool(articles as BadImageArticleRow[], concurrency, async (article) => {
+  await mapPool(articles, concurrency, async (article) => {
     if (!isProfileOrAvatarImage(article.image_url)) return;
 
     const category = article.category as Category;
@@ -241,11 +250,11 @@ export async function replaceProfileAvatarImages(options?: {
     let resolved: string | null = null;
 
     if (rawItemId) {
-      const { data: rawItem } = await supabase
-        .from("raw_items")
-        .select("id, url, image_url")
-        .eq("id", rawItemId)
-        .maybeSingle();
+      const rawRows = (await sql.query(
+        `SELECT id, url, image_url FROM raw_items WHERE id = $1 LIMIT 1`,
+        [rawItemId],
+      )) as Array<{ id: string; url: string; image_url: string | null }>;
+      const rawItem = rawRows[0];
 
       if (rawItem?.url) {
         resolved = await resolveArticleImageUrl({
@@ -262,14 +271,15 @@ export async function replaceProfileAvatarImages(options?: {
         ? null
         : CATEGORY_FALLBACK_IMAGE[category] ?? CATEGORY_FALLBACK_IMAGE.tech);
 
-    const { error: articleError } = await supabase
-      .from("articles")
-      .update({ image_url: imageUrl })
-      .eq("id", article.id);
-
-    if (articleError) {
+    try {
+      await sql.query(`UPDATE articles SET image_url = $1 WHERE id = $2`, [
+        imageUrl,
+        article.id,
+      ]);
+    } catch (err) {
       failed += 1;
-      console.log(`✗ ${article.headline.slice(0, 50)} — ${articleError.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`✗ ${article.headline.slice(0, 50)} — ${message}`);
       return;
     }
 

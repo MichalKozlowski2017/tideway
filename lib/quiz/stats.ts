@@ -1,14 +1,14 @@
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { getSql } from "@/lib/db/client";
 import type { QuizStats } from "@/lib/quiz/types";
 
 export async function getQuizStats(articleId: string): Promise<QuizStats | null> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("quiz_attempts")
-    .select("score, total_questions")
-    .eq("article_id", articleId);
+  const sql = getSql();
+  const data = (await sql.query(
+    `SELECT score, total_questions FROM quiz_attempts WHERE article_id = $1`,
+    [articleId],
+  )) as Array<{ score: number; total_questions: number }>;
 
-  if (error || !data?.length) return null;
+  if (!data.length) return null;
 
   const attemptCount = data.length;
   const scoreSum = data.reduce((sum, row) => sum + row.score, 0);
@@ -26,11 +26,10 @@ export async function recordQuizAttempt(params: {
   score: number;
   totalQuestions: number;
 }): Promise<void> {
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("quiz_attempts").insert({
-    article_id: params.articleId,
-    score: params.score,
-    total_questions: params.totalQuestions,
-  });
-  if (error) throw error;
+  const sql = getSql();
+  await sql.query(
+    `INSERT INTO quiz_attempts (article_id, score, total_questions)
+     VALUES ($1, $2, $3)`,
+    [params.articleId, params.score, params.totalQuestions],
+  );
 }

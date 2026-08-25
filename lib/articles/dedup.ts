@@ -1,4 +1,4 @@
-import type { getSupabaseAdmin } from "@/lib/db/supabase";
+import type { Sql } from "@/lib/db/client";
 
 const STOP_WORDS = new Set([
   "the",
@@ -94,37 +94,34 @@ export function titleSimilarity(a: string, b: string): number {
 const SIMILAR_STORY_THRESHOLD = 0.38;
 const SIMILAR_STORY_LOOKBACK_MS = 72 * 60 * 60 * 1000;
 
-type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
-
-export async function claimRawItems(
-  supabase: SupabaseAdmin,
-  ids: string[],
-): Promise<boolean> {
+export async function claimRawItems(sql: Sql, ids: string[]): Promise<boolean> {
   for (const id of ids) {
-    const { data } = await supabase
-      .from("raw_items")
-      .update({ status: "processing" })
-      .eq("id", id)
-      .eq("status", "pending")
-      .select("id")
-      .maybeSingle();
-
-    if (!data) return false;
+    const rows = await sql.query(
+      `UPDATE raw_items
+       SET status = 'processing'
+       WHERE id = $1 AND status = 'pending'
+       RETURNING id`,
+      [id],
+    );
+    if (!rows.length) return false;
   }
   return true;
 }
 
 export async function releaseRawItems(
-  supabase: SupabaseAdmin,
+  sql: Sql,
   ids: string[],
   status: "failed" | "skipped" | "pending",
 ): Promise<void> {
   if (!ids.length) return;
-  await supabase.from("raw_items").update({ status }).in("id", ids);
+  await sql.query(`UPDATE raw_items SET status = $1 WHERE id = ANY($2::uuid[])`, [
+    status,
+    ids,
+  ]);
 }
 
 export async function findDuplicateArticle(
-  supabase: SupabaseAdmin,
+  sql: Sql,
   params: {
     locale: string;
     category: string;
@@ -135,43 +132,46 @@ export async function findDuplicateArticle(
   },
 ): Promise<{ id: string; slug: string } | null> {
   if (params.rawItemIds.length) {
-    const { data: bySource } = await supabase
-      .from("articles")
-      .select("id, slug")
-      .eq("locale", params.locale)
-      .contains("source_item_ids", [params.rawItemIds[0]])
-      .limit(1);
-
-    if (bySource?.[0]) return bySource[0];
+    const bySource = await sql.query(
+      `SELECT id, slug FROM articles
+       WHERE locale = $1 AND source_item_ids @> ARRAY[$2]::uuid[]
+       LIMIT 1`,
+      [params.locale, params.rawItemIds[0]],
+    );
+    if (bySource[0]) {
+      return bySource[0] as { id: string; slug: string };
+    }
   }
 
   const fingerprint = storyFingerprint(params.sourceUrl);
   const normalizedUrl = normalizeSourceUrl(params.sourceUrl);
   const since = new Date(Date.now() - SIMILAR_STORY_LOOKBACK_MS).toISOString();
 
-  const { data: recent } = await supabase
-    .from("articles")
-    .select("id, slug, headline, source_item_ids")
-    .eq("locale", params.locale)
-    .eq("category", params.category)
-    .gte("published_at", since)
-    .order("published_at", { ascending: false })
-    .limit(40);
+  const recent = (await sql.query(
+    `SELECT id, slug, headline, source_item_ids FROM articles
+     WHERE locale = $1 AND category = $2 AND published_at >= $3
+     ORDER BY published_at DESC
+     LIMIT 40`,
+    [params.locale, params.category, since],
+  )) as Array<{
+    id: string;
+    slug: string;
+    headline: string;
+    source_item_ids: string[];
+  }>;
 
-  if (!recent?.length) return null;
+  if (!recent.length) return null;
 
-  const sourceIds = [
-    ...new Set(recent.flatMap((row) => row.source_item_ids ?? [])),
-  ];
+  const sourceIds = [...new Set(recent.flatMap((row) => row.source_item_ids ?? []))];
   const sourceTitlesById = new Map<string, { title: string; url: string }>();
 
   if (sourceIds.length) {
-    const { data: rawRows } = await supabase
-      .from("raw_items")
-      .select("id, title, url")
-      .in("id", sourceIds);
+    const rawRows = (await sql.query(
+      `SELECT id, title, url FROM raw_items WHERE id = ANY($1::uuid[])`,
+      [sourceIds],
+    )) as Array<{ id: string; title: string; url: string }>;
 
-    for (const row of rawRows ?? []) {
+    for (const row of rawRows) {
       sourceTitlesById.set(row.id, { title: row.title, url: row.url });
     }
   }
@@ -189,8 +189,7 @@ export async function findDuplicateArticle(
       }
 
       if (
-        titleSimilarity(params.sourceTitle, source.title) >=
-        SIMILAR_STORY_THRESHOLD
+        titleSimilarity(params.sourceTitle, source.title) >= SIMILAR_STORY_THRESHOLD
       ) {
         return { id: article.id, slug: article.slug };
       }
@@ -201,7 +200,7 @@ export async function findDuplicateArticle(
 }
 
 export async function hasExistingArticleForItem(
-  supabase: SupabaseAdmin,
+  sql: Sql,
   item: {
     id: string;
     content_hash: string;
@@ -210,39 +209,36 @@ export async function hasExistingArticleForItem(
     sources: { locale: string; category: string };
   },
 ): Promise<boolean> {
-  const { data: byHash } = await supabase
-    .from("raw_items")
-    .select("id")
-    .eq("content_hash", item.content_hash)
-    .eq("status", "processed")
-    .neq("id", item.id)
-    .limit(1);
+  const byHash = await sql.query(
+    `SELECT id FROM raw_items
+     WHERE content_hash = $1 AND status = 'processed' AND id <> $2
+     LIMIT 1`,
+    [item.content_hash, item.id],
+  );
+  if (byHash.length) return true;
 
-  if (byHash?.length) return true;
-
-  const { data: byUrl } = await supabase
-    .from("raw_items")
-    .select("id")
-    .eq("url", item.url)
-    .in("status", ["processed", "processing"])
-    .neq("id", item.id)
-    .limit(1);
-
-  if (byUrl?.length) return true;
+  const byUrl = await sql.query(
+    `SELECT id FROM raw_items
+     WHERE url = $1 AND status = ANY(ARRAY['processed','processing']::raw_item_status[])
+       AND id <> $2
+     LIMIT 1`,
+    [item.url, item.id],
+  );
+  if (byUrl.length) return true;
 
   const normalizedUrl = normalizeSourceUrl(item.url);
   const fingerprint = storyFingerprint(item.url);
   const since = new Date(Date.now() - SIMILAR_STORY_LOOKBACK_MS).toISOString();
 
-  const { data: recentRaw } = await supabase
-    .from("raw_items")
-    .select("id, url, title, status")
-    .in("status", ["processed", "processing", "pending"])
-    .gte("fetched_at", since)
-    .neq("id", item.id)
-    .limit(200);
+  const recentRaw = (await sql.query(
+    `SELECT id, url, title, status FROM raw_items
+     WHERE status = ANY(ARRAY['processed','processing','pending']::raw_item_status[])
+       AND fetched_at >= $1 AND id <> $2
+     LIMIT 200`,
+    [since, item.id],
+  )) as Array<{ id: string; url: string; title: string; status: string }>;
 
-  for (const row of recentRaw ?? []) {
+  for (const row of recentRaw) {
     if (normalizeSourceUrl(row.url) === normalizedUrl) return true;
     if (fingerprint && storyFingerprint(row.url) === fingerprint) return true;
     if (
@@ -253,7 +249,7 @@ export async function hasExistingArticleForItem(
     }
   }
 
-  const duplicate = await findDuplicateArticle(supabase, {
+  const duplicate = await findDuplicateArticle(sql, {
     locale: item.sources.locale,
     category: item.sources.category,
     rawItemIds: [item.id],
@@ -265,21 +261,22 @@ export async function hasExistingArticleForItem(
 }
 
 export async function hasRecentNormalizedUrl(
-  supabase: SupabaseAdmin,
+  sql: Sql,
   url: string,
 ): Promise<boolean> {
   const normalizedUrl = normalizeSourceUrl(url);
   const fingerprint = storyFingerprint(url);
   const since = new Date(Date.now() - SIMILAR_STORY_LOOKBACK_MS).toISOString();
 
-  const { data } = await supabase
-    .from("raw_items")
-    .select("id, url")
-    .gte("fetched_at", since)
-    .order("fetched_at", { ascending: false })
-    .limit(120);
+  const data = (await sql.query(
+    `SELECT id, url FROM raw_items
+     WHERE fetched_at >= $1
+     ORDER BY fetched_at DESC
+     LIMIT 120`,
+    [since],
+  )) as Array<{ id: string; url: string }>;
 
-  for (const row of data ?? []) {
+  for (const row of data) {
     if (normalizeSourceUrl(row.url) === normalizedUrl) return true;
     if (fingerprint && storyFingerprint(row.url) === fingerprint) return true;
   }

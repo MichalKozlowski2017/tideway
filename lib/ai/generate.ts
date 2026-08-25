@@ -29,7 +29,7 @@ import {
   type DigestArticle,
   type GeneratedArticle,
 } from "@/lib/ai/schemas";
-import { getSupabaseAdmin } from "@/lib/db/supabase";
+import { getSql, type Sql } from "@/lib/db/client";
 import { RAW_ITEM_PLAN_COLUMNS } from "@/lib/db/article-columns";
 import {
   ARTICLE_SOURCE_PRIORITY,
@@ -58,8 +58,6 @@ import {
 } from "@/lib/ai/trend-quality";
 import { contentHash, slugify } from "@/lib/utils/hash";
 
-const RAW_ITEM_PLAN_SELECT = `${RAW_ITEM_PLAN_COLUMNS}, sources(category, locale, type, config)`;
-
 const BATCH_SIZE = 4;
 const PENDING_POOL_SIZE = 250;
 const PENDING_FETCH_SIZE = 150;
@@ -82,6 +80,32 @@ const SOURCE_TEXT_MIN_FOR_ANALYSIS = 280;
 type PendingItem = RawItem & {
   sources: Pick<Source, "category" | "locale" | "type" | "config">;
 };
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "23505"
+  );
+}
+
+function qualifyRawItemPlanColumns(alias: string): string {
+  return RAW_ITEM_PLAN_COLUMNS.split(",")
+    .map((col) => `${alias}.${col.trim()}`)
+    .join(", ");
+}
+
+function mapSourcesFromRow(
+  row: Record<string, unknown>,
+): Pick<Source, "category" | "locale" | "type" | "config"> {
+  return {
+    category: row.source_category as string,
+    locale: row.source_locale as string,
+    type: row.source_type as Source["type"],
+    config: (row.source_config ?? {}) as Record<string, string>,
+  };
+}
 
 async function callAi(
   prompt: string,
@@ -147,62 +171,62 @@ async function ensureUniqueSlug(
   locale: string,
   baseSlug: string,
 ): Promise<string> {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
   let slug = baseSlug;
   let suffix = 1;
 
   while (true) {
-    const { data } = await supabase
-      .from("articles")
-      .select("id")
-      .eq("slug", slug)
-      .eq("locale", locale)
-      .maybeSingle();
+    const rows = await sql.query(
+      `SELECT id FROM articles WHERE slug = $1 AND locale = $2 LIMIT 1`,
+      [slug, locale],
+    );
 
-    if (!data) return slug;
+    if (!rows.length) return slug;
     slug = `${baseSlug}-${suffix}`;
     suffix += 1;
   }
 }
 
 async function hasExistingArticle(item: PendingItem): Promise<boolean> {
-  return hasExistingArticleForItem(getSupabaseAdmin(), item);
+  return hasExistingArticleForItem(getSql(), item);
 }
 
 async function hasRecentTrendArticle(
   query: string,
   locale: string,
 ): Promise<boolean> {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
   const base = slugify(query);
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from("articles")
-    .select("id")
-    .eq("locale", locale)
-    .gte("published_at", since)
-    .or(`slug.eq.${base},slug.ilike.${base}-%`)
-    .limit(1);
+  const rows = await sql.query(
+    `SELECT id FROM articles
+     WHERE locale = $1
+       AND published_at >= $2
+       AND (slug = $3 OR slug ILIKE $4)
+     LIMIT 1`,
+    [locale, since, base, `${base}-%`],
+  );
 
-  return (data?.length ?? 0) > 0;
+  return rows.length > 0;
 }
 
 async function hasQuizPublishedToday(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sql: Sql,
   locale: Locale,
 ): Promise<boolean> {
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
-  const { data } = await supabase
-    .from("articles")
-    .select("summary")
-    .eq("locale", locale)
-    .eq("article_type", "trend_item")
-    .gte("published_at", start.toISOString())
-    .limit(30);
+  const rows = (await sql.query(
+    `SELECT summary FROM articles
+     WHERE locale = $1
+       AND article_type = 'trend_item'
+       AND published_at >= $2
+     LIMIT 30`,
+    [locale, start.toISOString()],
+  )) as Array<{ summary: { format?: string; quiz?: unknown[] } | null }>;
 
-  return (data ?? []).some((row) => {
-    const summary = row.summary as { format?: string; quiz?: unknown[] } | null;
+  return rows.some((row) => {
+    const summary = row.summary;
     return summary?.format === "quiz" || (summary?.quiz?.length ?? 0) > 0;
   });
 }
@@ -558,20 +582,18 @@ function toPromptItem(item: PendingItem, description: string): PromptItem {
 }
 
 async function hydratePendingDescriptions(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sql: Sql,
   items: PendingItem[],
 ): Promise<PendingItem[]> {
   if (!items.length) return items;
   const ids = [...new Set(items.map((item) => item.id))];
-  const { data, error } = await supabase
-    .from("raw_items")
-    .select("id, description")
-    .in("id", ids);
-
-  if (error) throw error;
+  const data = (await sql.query(
+    `SELECT id, description FROM raw_items WHERE id = ANY($1::uuid[])`,
+    [ids],
+  )) as Array<{ id: string; description: string | null }>;
 
   const descriptions = new Map(
-    (data ?? []).map((row) => [row.id as string, row.description as string | null]),
+    data.map((row) => [row.id, row.description]),
   );
 
   return items.map((item) => ({
@@ -581,7 +603,7 @@ async function hydratePendingDescriptions(
 }
 
 async function enrichSourceText(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sql: Sql,
   rawItem: PendingItem,
 ): Promise<string> {
   let sourceText = rawItem.description ?? "";
@@ -592,10 +614,10 @@ async function enrichSourceText(
     });
     if (enriched.length > sourceText.length) {
       sourceText = enriched;
-      await supabase
-        .from("raw_items")
-        .update({ description: enriched })
-        .eq("id", rawItem.id);
+      await sql.query(`UPDATE raw_items SET description = $1 WHERE id = $2`, [
+        enriched,
+        rawItem.id,
+      ]);
     }
   }
   return sourceText;
@@ -660,7 +682,7 @@ async function generateArticleDraft(params: {
 }
 
 async function publishArticle(params: {
-  supabase: ReturnType<typeof getSupabaseAdmin>;
+  sql: Sql;
   locale: Locale;
   category: Category;
   generatedItem: GeneratedArticle;
@@ -670,7 +692,7 @@ async function publishArticle(params: {
   const primary = params.rawItems[0];
   const sourceCategory = params.category;
 
-  const duplicate = await findDuplicateArticle(params.supabase, {
+  const duplicate = await findDuplicateArticle(params.sql, {
     locale: params.locale,
     category: sourceCategory,
     rawItemIds: params.rawItems.map((item) => item.id),
@@ -681,7 +703,7 @@ async function publishArticle(params: {
   if (duplicate) {
     console.log(`  ⊘ duplikat — już jest /${duplicate.slug}`);
     await releaseRawItems(
-      params.supabase,
+      params.sql,
       params.rawItems.map((item) => item.id),
       "skipped",
     );
@@ -728,51 +750,66 @@ async function publishArticle(params: {
     });
   }
 
-  const { error: articleError } = await params.supabase.from("articles").insert({
-    slug,
-    locale: params.locale,
-    category,
-    article_type: "trend_item",
-    seo_title: params.generatedItem.seo_title,
-    seo_description: params.generatedItem.seo_description,
-    headline: params.generatedItem.headline,
-    lead: params.generatedItem.lead,
-    image_url: imageUrl,
-    summary: {
-      format: params.generatedItem.format,
-      body: params.generatedItem.format === "quiz" ? undefined : params.generatedItem.body,
-      highlights:
-        params.generatedItem.format === "quiz"
-          ? undefined
-          : params.generatedItem.highlights,
-      contextNote: params.generatedItem.context_note,
-      sectionTitles: params.generatedItem.section_titles,
-      quiz: params.generatedItem.quiz_questions?.map((q) => ({
-        prompt: q.prompt,
-        options: q.options,
-        correctIndex: q.correct_index as 0 | 1 | 2,
-      })),
-    },
-    why_it_matters: params.generatedItem.why_it_matters,
-    tags: params.generatedItem.tags,
-    source_item_ids: params.rawItems.map((item) => item.id),
-    is_published: true,
-  });
+  const summary = {
+    format: params.generatedItem.format,
+    body: params.generatedItem.format === "quiz" ? undefined : params.generatedItem.body,
+    highlights:
+      params.generatedItem.format === "quiz"
+        ? undefined
+        : params.generatedItem.highlights,
+    contextNote: params.generatedItem.context_note,
+    sectionTitles: params.generatedItem.section_titles,
+    quiz: params.generatedItem.quiz_questions?.map((q) => ({
+      prompt: q.prompt,
+      options: q.options,
+      correctIndex: q.correct_index as 0 | 1 | 2,
+    })),
+  };
 
-  if (articleError) {
-    await releaseRawItems(
-      params.supabase,
-      params.rawItems.map((item) => item.id),
-      "failed",
+  try {
+    await params.sql.query(
+      `INSERT INTO articles (
+         slug, locale, category, article_type, seo_title, seo_description,
+         headline, lead, image_url, summary, why_it_matters, tags,
+         source_item_ids, is_published
+       ) VALUES (
+         $1, $2, $3, 'trend_item', $4, $5,
+         $6, $7, $8, $9::jsonb, $10, $11::text[],
+         $12::uuid[], true
+       )`,
+      [
+        slug,
+        params.locale,
+        category,
+        params.generatedItem.seo_title,
+        params.generatedItem.seo_description,
+        params.generatedItem.headline,
+        params.generatedItem.lead,
+        imageUrl,
+        JSON.stringify(summary),
+        params.generatedItem.why_it_matters,
+        params.generatedItem.tags,
+        params.rawItems.map((item) => item.id),
+      ],
     );
-    return false;
+  } catch (error) {
+    // Unique violations (23505) and any other insert failure — same as old articleError path
+    if (isUniqueViolation(error) || error) {
+      await releaseRawItems(
+        params.sql,
+        params.rawItems.map((item) => item.id),
+        "failed",
+      );
+      return false;
+    }
+    throw error;
   }
 
   for (const item of params.rawItems) {
-    await params.supabase
-      .from("raw_items")
-      .update({ status: "processed" })
-      .eq("id", item.id);
+    await params.sql.query(
+      `UPDATE raw_items SET status = 'processed' WHERE id = $1`,
+      [item.id],
+    );
   }
 
   params.indexNowUrls.push(articlePublicUrl(params.locale, slug));
@@ -793,7 +830,7 @@ function workItemIds(work: GenerationWork[]): Set<string> {
 }
 
 async function generateAndPublishTrend(params: {
-  supabase: ReturnType<typeof getSupabaseAdmin>;
+  sql: Sql;
   rawItem: PendingItem;
   formatOverride?: ArticleFormat;
   indexNowUrls: string[];
@@ -804,11 +841,11 @@ async function generateAndPublishTrend(params: {
 
   if (isLowQualityTrendQuery(query)) {
     console.log("  ⊘ trend — niska jakość frazy");
-    await releaseRawItems(params.supabase, [params.rawItem.id], "skipped");
+    await releaseRawItems(params.sql, [params.rawItem.id], "skipped");
     return { published: false, tokensUsed: 0 };
   }
 
-  if (!(await claimRawItems(params.supabase, [params.rawItem.id]))) {
+  if (!(await claimRawItems(params.sql, [params.rawItem.id]))) {
     console.log("  ⊘ już przetwarzane lub opublikowane");
     return { published: false, tokensUsed: 0 };
   }
@@ -818,7 +855,7 @@ async function generateAndPublishTrend(params: {
     params.formatOverride ?? pickTrendArticleFormat(query, category);
 
   const { description: context, matches } = await buildTrendContext(
-    params.supabase,
+    params.sql,
     {
       query,
       category,
@@ -836,7 +873,7 @@ async function generateAndPublishTrend(params: {
     !canGenerateWithoutContext
   ) {
     console.log("  ⊘ trend bez kontekstu źródeł — skip");
-    await releaseRawItems(params.supabase, [params.rawItem.id], "skipped");
+    await releaseRawItems(params.sql, [params.rawItem.id], "skipped");
     return { published: false, tokensUsed: 0 };
   }
 
@@ -845,10 +882,10 @@ async function generateAndPublishTrend(params: {
       ? `Search query: "${query}". Write ONLY about this topic. Do not write about unrelated news.\n\n${context}`
       : context;
 
-  await params.supabase
-    .from("raw_items")
-    .update({ description: queryFocusedContext })
-    .eq("id", params.rawItem.id);
+  await params.sql.query(
+    `UPDATE raw_items SET description = $1 WHERE id = $2`,
+    [queryFocusedContext, params.rawItem.id],
+  );
 
   const angle = pickEditorialAngle(
     category,
@@ -881,18 +918,18 @@ async function generateAndPublishTrend(params: {
 
   if (!generatedItem) {
     console.log("  ✗ odrzucono trend (walidacja lub jakość)");
-    await releaseRawItems(params.supabase, [params.rawItem.id], "failed");
+    await releaseRawItems(params.sql, [params.rawItem.id], "failed");
     return { published: false, tokensUsed };
   }
 
   if (!articleMatchesTrendQuery(query, generatedItem)) {
     console.log("  ✗ trend nie odpowiada frazie wyszukiwania");
-    await releaseRawItems(params.supabase, [params.rawItem.id], "failed");
+    await releaseRawItems(params.sql, [params.rawItem.id], "failed");
     return { published: false, tokensUsed };
   }
 
   const published = await publishArticle({
-    supabase: params.supabase,
+    sql: params.sql,
     locale,
     category,
     generatedItem,
@@ -904,7 +941,7 @@ async function generateAndPublishTrend(params: {
 }
 
 async function generateAndPublishSingle(params: {
-  supabase: ReturnType<typeof getSupabaseAdmin>;
+  sql: Sql;
   rawItem: PendingItem;
   articleFormat: ArticleFormat;
   indexNowUrls: string[];
@@ -912,12 +949,12 @@ async function generateAndPublishSingle(params: {
   const locale = params.rawItem.sources.locale as Locale;
   const category = params.rawItem.sources.category as Category;
 
-  if (!(await claimRawItems(params.supabase, [params.rawItem.id]))) {
+  if (!(await claimRawItems(params.sql, [params.rawItem.id]))) {
     console.log("  ⊘ już przetwarzane lub opublikowane");
     return { published: false, tokensUsed: 0 };
   }
 
-  const sourceText = await enrichSourceText(params.supabase, params.rawItem);
+  const sourceText = await enrichSourceText(params.sql, params.rawItem);
   const normalizedFormat = adaptFormatForSourceDepth(
     params.articleFormat,
     params.rawItem,
@@ -963,7 +1000,7 @@ async function generateAndPublishSingle(params: {
         : "  ✗ odrzucono (walidacja, jakość lub API)",
     );
     await releaseRawItems(
-      params.supabase,
+      params.sql,
       [params.rawItem.id],
       skip ? "skipped" : "failed",
     );
@@ -971,7 +1008,7 @@ async function generateAndPublishSingle(params: {
   }
 
   const published = await publishArticle({
-    supabase: params.supabase,
+    sql: params.sql,
     locale,
     category,
     generatedItem,
@@ -984,40 +1021,67 @@ async function generateAndPublishSingle(params: {
 
 function toLeanPendingItem(row: Record<string, unknown>): PendingItem {
   return {
-    ...(row as unknown as PendingItem),
-    description: null,
+    id: row.id as string,
+    source_id: row.source_id as string,
     external_id: "",
+    title: row.title as string,
+    description: null,
+    url: row.url as string,
+    engagement_score: Number(row.engagement_score),
+    published_at: (row.published_at as string | null) ?? null,
+    fetched_at: row.fetched_at as string,
+    content_hash: row.content_hash as string,
+    status: row.status as RawItem["status"],
+    image_url: (row.image_url as string | null) ?? null,
+    sources: mapSourcesFromRow(row),
+  };
+}
+
+function toFullPendingItem(row: Record<string, unknown>): PendingItem {
+  return {
+    id: row.id as string,
+    source_id: row.source_id as string,
+    external_id: (row.external_id as string) ?? "",
+    title: row.title as string,
+    description: (row.description as string | null) ?? null,
+    url: row.url as string,
+    engagement_score: Number(row.engagement_score),
+    published_at: (row.published_at as string | null) ?? null,
+    fetched_at: row.fetched_at as string,
+    content_hash: row.content_hash as string,
+    status: row.status as RawItem["status"],
+    image_url: (row.image_url as string | null) ?? null,
+    sources: mapSourcesFromRow(row),
   };
 }
 
 async function fetchPendingForSources(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sql: Sql,
   options: { excludeTrend?: boolean; trendOnly?: boolean; limit: number },
 ): Promise<PendingItem[]> {
-  let sourceQuery = supabase.from("sources").select("id").eq("enabled", true);
-  if (options.trendOnly) {
-    sourceQuery = sourceQuery.eq("type", "google_trends");
-  } else if (options.excludeTrend) {
-    sourceQuery = sourceQuery.neq("type", "google_trends");
-  }
+  const typeFilter = options.trendOnly
+    ? `AND s.type = 'google_trends'`
+    : options.excludeTrend
+      ? `AND s.type <> 'google_trends'`
+      : "";
 
-  const { data: sources, error: sourceError } = await sourceQuery;
-  if (sourceError) throw sourceError;
-  if (!sources?.length) return [];
+  const rows = await sql.query(
+    `SELECT ${qualifyRawItemPlanColumns("r")},
+            s.category AS source_category,
+            s.locale AS source_locale,
+            s.type AS source_type,
+            s.config AS source_config
+     FROM raw_items r
+     JOIN sources s ON s.id = r.source_id
+     WHERE r.status = 'pending'
+       AND s.enabled = true
+       ${typeFilter}
+     ORDER BY r.fetched_at DESC
+     LIMIT $1`,
+    [options.limit],
+  );
 
-  const { data, error } = await supabase
-    .from("raw_items")
-    .select(RAW_ITEM_PLAN_SELECT)
-    .in(
-      "source_id",
-      sources.map((row) => row.id),
-    )
-    .eq("status", "pending")
-    .order("fetched_at", { ascending: false })
-    .limit(options.limit);
-
-  if (error) throw error;
-  return (data ?? []).map((row) => toLeanPendingItem(row));
+  return (rows as Record<string, unknown>[]).map(toLeanPendingItem);
 }
 
 export async function generatePendingArticles(options?: {
@@ -1032,14 +1096,14 @@ export async function generatePendingArticles(options?: {
   aiModel: string;
 }> {
   console.log(`AI provider: ${describeAiSetup()}`);
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
 
   const [trendPendingRaw, articlePendingRaw] = await Promise.all([
-    fetchPendingForSources(supabase, {
+    fetchPendingForSources(sql, {
       trendOnly: true,
       limit: TREND_CANDIDATE_LIMIT * 3,
     }),
-    fetchPendingForSources(supabase, {
+    fetchPendingForSources(sql, {
       excludeTrend: true,
       limit: PENDING_FETCH_SIZE,
     }),
@@ -1064,10 +1128,9 @@ export async function generatePendingArticles(options?: {
 
   for (const item of trendPendingRaw) {
     if (now - new Date(item.fetched_at).getTime() > TREND_MAX_AGE_MS) {
-      await supabase
-        .from("raw_items")
-        .update({ status: "skipped" })
-        .eq("id", item.id);
+      await sql.query(`UPDATE raw_items SET status = 'skipped' WHERE id = $1`, [
+        item.id,
+      ]);
       skippedTrends += 1;
     }
   }
@@ -1083,27 +1146,24 @@ export async function generatePendingArticles(options?: {
   const trendEligible: PendingItem[] = [];
   for (const item of sortPendingItems(trendPending)) {
     if (isLowQualityTrendQuery(item.title)) {
-      await supabase
-        .from("raw_items")
-        .update({ status: "skipped" })
-        .eq("id", item.id);
+      await sql.query(`UPDATE raw_items SET status = 'skipped' WHERE id = $1`, [
+        item.id,
+      ]);
       skippedTrends += 1;
       continue;
     }
     const locale = item.sources.locale;
     if (await hasExistingArticle(item)) {
-      await supabase
-        .from("raw_items")
-        .update({ status: "skipped" })
-        .eq("id", item.id);
+      await sql.query(`UPDATE raw_items SET status = 'skipped' WHERE id = $1`, [
+        item.id,
+      ]);
       skippedDuplicates += 1;
       continue;
     }
     if (await hasRecentTrendArticle(item.title, locale)) {
-      await supabase
-        .from("raw_items")
-        .update({ status: "skipped" })
-        .eq("id", item.id);
+      await sql.query(`UPDATE raw_items SET status = 'skipped' WHERE id = $1`, [
+        item.id,
+      ]);
       skippedDuplicates += 1;
       continue;
     }
@@ -1114,17 +1174,16 @@ export async function generatePendingArticles(options?: {
   const eligible: PendingItem[] = [];
   for (const item of items) {
     if (await hasExistingArticle(item)) {
-      await supabase
-        .from("raw_items")
-        .update({ status: "skipped" })
-        .eq("id", item.id);
+      await sql.query(`UPDATE raw_items SET status = 'skipped' WHERE id = $1`, [
+        item.id,
+      ]);
       skippedDuplicates += 1;
       continue;
     }
     eligible.push(item);
   }
 
-  const quizPublishedToday = await hasQuizPublishedToday(supabase, "pl");
+  const quizPublishedToday = await hasQuizPublishedToday(sql, "pl");
   const work = planGenerationWork(eligible, trendEligible, {
     preferSportQuiz: !quizPublishedToday,
   });
@@ -1176,7 +1235,7 @@ export async function generatePendingArticles(options?: {
     if (job.kind === "synthesis") workItemList.push(...job.items);
     else workItemList.push(job.item);
   }
-  const hydratedItems = await hydratePendingDescriptions(supabase, workItemList);
+  const hydratedItems = await hydratePendingDescriptions(sql, workItemList);
   const hydratedById = new Map(hydratedItems.map((item) => [item.id, item]));
 
   options?.onProgress?.({
@@ -1204,7 +1263,7 @@ export async function generatePendingArticles(options?: {
     if (job.kind === "trend") {
       const rawItem = hydratedById.get(job.item.id) ?? job.item;
       const { published, tokensUsed: used } = await generateAndPublishTrend({
-        supabase,
+        sql,
         rawItem,
         formatOverride: job.format,
         indexNowUrls,
@@ -1231,7 +1290,7 @@ export async function generatePendingArticles(options?: {
         (item) => hydratedById.get(item.id) ?? item,
       );
       const itemIds = rawItems.map((item) => item.id);
-      if (!(await claimRawItems(supabase, itemIds))) {
+      if (!(await claimRawItems(sql, itemIds))) {
         console.log("  ⊘ synteza — źródła już przetwarzane");
         options?.onProgress?.({
           type: "task_done",
@@ -1251,7 +1310,7 @@ export async function generatePendingArticles(options?: {
       const enriched = await Promise.all(
         rawItems.map(async (item) => ({
           item,
-          text: await enrichSourceText(supabase, item),
+          text: await enrichSourceText(sql, item),
         })),
       );
       const sourceText = enriched.map((entry) => entry.text).join("\n\n---\n\n");
@@ -1285,7 +1344,7 @@ export async function generatePendingArticles(options?: {
 
       if (!generatedItem) {
         console.log("  ✗ odrzucono syntezę (walidacja lub jakość)");
-        await releaseRawItems(supabase, itemIds, "failed");
+        await releaseRawItems(sql, itemIds, "failed");
         options?.onProgress?.({
           type: "task_done",
           index: taskIndex,
@@ -1298,7 +1357,7 @@ export async function generatePendingArticles(options?: {
       }
 
       const synthesisPublished = await publishArticle({
-        supabase,
+        sql,
         locale,
         category,
         generatedItem,
@@ -1323,7 +1382,7 @@ export async function generatePendingArticles(options?: {
     const rawItem = hydratedById.get(job.item.id) ?? job.item;
     const articleFormat = job.format ?? resolveFeedArticleFormat(rawItem);
     const { published, tokensUsed: used } = await generateAndPublishSingle({
-      supabase,
+      sql,
       rawItem,
       articleFormat,
       indexNowUrls,
@@ -1360,14 +1419,14 @@ export async function generatePendingArticles(options?: {
       pickHighIntentItem(backupPool) ?? sortPendingItems(backupPool)[0];
 
     if (backup) {
-      const [hydratedBackup] = await hydratePendingDescriptions(supabase, [backup]);
+      const [hydratedBackup] = await hydratePendingDescriptions(sql, [backup]);
       console.log("↻ backup długi materiał…");
       options?.onProgress?.({
         type: "backup_start",
         title: hydratedBackup.title,
       });
       const { published, tokensUsed: used } = await generateAndPublishSingle({
-        supabase,
+        sql,
         rawItem: hydratedBackup,
         articleFormat: formatForHighIntentItem(hydratedBackup),
         indexNowUrls,
@@ -1401,7 +1460,7 @@ export async function generateDigest(
   digestType: "daily" | "weekly",
   category: string,
 ): Promise<Article | null> {
-  const supabase = getSupabaseAdmin();
+  const sql = getSql();
   const since = new Date();
   if (digestType === "daily") {
     since.setDate(since.getDate() - 1);
@@ -1409,17 +1468,18 @@ export async function generateDigest(
     since.setDate(since.getDate() - 7);
   }
 
-  const { data: recent } = await supabase
-    .from("articles")
-    .select("headline, slug, image_url")
-    .eq("locale", locale)
-    .eq("category", category)
-    .eq("article_type", "trend_item")
-    .gte("published_at", since.toISOString())
-    .order("published_at", { ascending: false })
-    .limit(15);
+  const recent = (await sql.query(
+    `SELECT headline, slug, image_url FROM articles
+     WHERE locale = $1
+       AND category = $2
+       AND article_type = 'trend_item'
+       AND published_at >= $3
+     ORDER BY published_at DESC
+     LIMIT 15`,
+    [locale, category, since.toISOString()],
+  )) as Array<{ headline: string; slug: string; image_url: string | null }>;
 
-  if (!recent?.length) return null;
+  if (!recent.length) return null;
 
   const digestImageUrl =
     recent.find((a) => a.image_url)?.image_url ??
@@ -1449,46 +1509,68 @@ export async function generateDigest(
     await recordArticleSlugRedirect(locale, baseSlug, slug);
   }
 
-  const { data: article, error } = await supabase
-    .from("articles")
-    .insert({
-      slug,
-      locale,
-      category,
-      article_type: articleType,
-      seo_title: digest.seo_title,
-      seo_description: digest.seo_description,
-      headline: digest.headline,
-      lead: digest.lead,
-      image_url: digestImageUrl,
-      summary: digestSummary,
-      why_it_matters: digest.why_it_matters,
-      tags: digest.tags,
-      source_item_ids: [],
-      is_published: true,
-    })
-    .select()
-    .single();
+  let article: Article | null = null;
+  try {
+    const rows = (await sql.query(
+      `INSERT INTO articles (
+         slug, locale, category, article_type, seo_title, seo_description,
+         headline, lead, image_url, summary, why_it_matters, tags,
+         source_item_ids, is_published
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10::jsonb, $11, $12::text[],
+         $13::uuid[], true
+       )
+       RETURNING *`,
+      [
+        slug,
+        locale,
+        category,
+        articleType,
+        digest.seo_title,
+        digest.seo_description,
+        digest.headline,
+        digest.lead,
+        digestImageUrl,
+        JSON.stringify(digestSummary),
+        digest.why_it_matters,
+        digest.tags,
+        [],
+      ],
+    )) as Article[];
+    article = rows[0] ?? null;
+  } catch (error) {
+    // Unique violations (23505) and other insert failures — same as old insert error path
+    if (isUniqueViolation(error) || error) {
+      return null;
+    }
+    throw error;
+  }
 
-  if (error || !article) return null;
+  if (!article) return null;
 
   await notifyIndexNow([articlePublicUrl(locale, slug)]);
 
-  await supabase.from("daily_rollups").upsert(
-    {
+  await sql.query(
+    `INSERT INTO daily_rollups (locale, rollup_type, period_date, article_id, metrics)
+     VALUES ($1, $2, $3::date, $4, $5::jsonb)
+     ON CONFLICT (locale, rollup_type, period_date)
+     DO UPDATE SET
+       article_id = EXCLUDED.article_id,
+       metrics = EXCLUDED.metrics`,
+    [
       locale,
-      rollup_type: digestType,
-      period_date: new Date().toISOString().slice(0, 10),
-      article_id: article.id,
-      metrics: {
+      digestType,
+      new Date().toISOString().slice(0, 10),
+      article.id,
+      JSON.stringify({
         rising: digest.rising ?? [],
         falling: digest.falling ?? [],
-      },
-    },
-    { onConflict: "locale,rollup_type,period_date" },
+      }),
+    ],
   );
 
-  return article as Article;
+  return article;
 }
 
 /** Generate one pending raw item by title match (local preview / targeted runs). */
@@ -1500,26 +1582,31 @@ export async function previewGenerateByTitle(
   format?: ArticleFormat;
   tokensUsed: number;
 }> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("raw_items")
-    .select("*, sources(category, locale, type, config)")
-    .eq("status", "pending")
-    .ilike("title", `%${titlePattern}%`)
-    .limit(1)
-    .maybeSingle();
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT r.*,
+            s.category AS source_category,
+            s.locale AS source_locale,
+            s.type AS source_type,
+            s.config AS source_config
+     FROM raw_items r
+     JOIN sources s ON s.id = r.source_id
+     WHERE r.status = 'pending'
+       AND r.title ILIKE $1
+     LIMIT 1`,
+    [`%${titlePattern}%`],
+  );
 
-  if (error) throw error;
-  if (!data) {
+  if (!rows.length) {
     console.log(`Brak pending item pasującego do: ${titlePattern}`);
     return { published: false, tokensUsed: 0 };
   }
 
-  const rawItem = data as PendingItem;
+  const rawItem = toFullPendingItem(rows[0] as Record<string, unknown>);
   const articleFormat = formatForHighIntentItem(rawItem);
   const indexNowUrls: string[] = [];
   const { published, tokensUsed } = await generateAndPublishSingle({
-    supabase,
+    sql,
     rawItem,
     articleFormat,
     indexNowUrls,
@@ -1527,14 +1614,14 @@ export async function previewGenerateByTitle(
 
   let slug: string | undefined;
   if (published) {
-    const { data: article } = await supabase
-      .from("articles")
-      .select("slug")
-      .eq("locale", rawItem.sources.locale)
-      .order("published_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    slug = article?.slug;
+    const articleRows = (await sql.query(
+      `SELECT slug FROM articles
+       WHERE locale = $1
+       ORDER BY published_at DESC
+       LIMIT 1`,
+      [rawItem.sources.locale],
+    )) as Array<{ slug: string }>;
+    slug = articleRows[0]?.slug;
     await notifyIndexNow(indexNowUrls);
   }
 
@@ -1542,13 +1629,14 @@ export async function previewGenerateByTitle(
 }
 
 export async function startJob(jobType: string) {
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("generation_jobs")
-    .insert({ job_type: jobType, status: "running" })
-    .select()
-    .single();
-  return data;
+  const sql = getSql();
+  const rows = await sql.query(
+    `INSERT INTO generation_jobs (job_type, status)
+     VALUES ($1, 'running')
+     RETURNING *`,
+    [jobType],
+  );
+  return rows[0] ?? null;
 }
 
 export async function finishJob(
@@ -1558,17 +1646,17 @@ export async function finishJob(
   tokensUsed: number,
   error?: string,
 ) {
-  const supabase = getSupabaseAdmin();
-  await supabase
-    .from("generation_jobs")
-    .update({
-      status,
-      finished_at: new Date().toISOString(),
-      items_processed: itemsProcessed,
-      tokens_used: tokensUsed,
-      error: error ?? null,
-    })
-    .eq("id", jobId);
+  const sql = getSql();
+  await sql.query(
+    `UPDATE generation_jobs
+     SET status = $1,
+         finished_at = $2,
+         items_processed = $3,
+         tokens_used = $4,
+         error = $5
+     WHERE id = $6`,
+    [status, new Date().toISOString(), itemsProcessed, tokensUsed, error ?? null, jobId],
+  );
 }
 
 // Re-export for dedup utility used elsewhere

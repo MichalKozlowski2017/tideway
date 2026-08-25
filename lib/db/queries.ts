@@ -4,37 +4,12 @@ import {
   ARTICLE_FEED_COLUMNS,
   ARTICLE_LIST_COLUMNS,
 } from "@/lib/db/article-columns";
-import {
-  getSupabaseAdmin,
-  getSupabasePublic,
-  hasSupabaseConfig,
-} from "@/lib/db/supabase";
+import { getSql, hasDatabaseConfig } from "@/lib/db/client";
 import { normalizeListSummary } from "@/lib/ai/article-body";
 import { tagSlug } from "@/lib/tags";
 import type { Article } from "@/lib/types";
 
 export const ARTICLES_PAGE_SIZE = 24;
-
-/** Supabase/PostgREST returns at most 1000 rows per request. */
-const SUPABASE_PAGE_SIZE = 1000;
-
-async function fetchAllRows<T>(
-  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: Error | null }>,
-): Promise<T[]> {
-  const rows: T[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await fetchPage(offset, offset + SUPABASE_PAGE_SIZE - 1);
-    if (error) throw error;
-    if (!data?.length) break;
-    rows.push(...data);
-    if (data.length < SUPABASE_PAGE_SIZE) break;
-    offset += SUPABASE_PAGE_SIZE;
-  }
-
-  return rows;
-}
 
 export type PaginatedArticles = {
   articles: Article[];
@@ -105,51 +80,75 @@ function mapFeedArticle(row: Record<string, unknown>): Article {
   };
 }
 
+function paginate(page: number, pageSize: number) {
+  const safePage = Math.max(1, page);
+  const offset = (safePage - 1) * pageSize;
+  return { offset, page: safePage, limit: pageSize };
+}
+
+function toPaginatedResult(
+  rows: Record<string, unknown>[],
+  total: number,
+  page: number,
+  pageSize: number,
+): PaginatedArticles {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  return {
+    articles: rows.map(mapArticle),
+    total,
+    page,
+    pageSize,
+    totalPages,
+  };
+}
+
 export async function getArticles(params: {
   locale: string;
   category?: string;
   articleType?: string;
   limit?: number;
 }): Promise<Article[]> {
-  if (!hasSupabaseConfig()) return [];
-  const client = getSupabasePublic();
-  let query = client
-    .from("articles")
-    .select(ARTICLE_LIST_COLUMNS)
-    .eq("locale", params.locale)
-    .eq("is_published", true)
-    .order("published_at", { ascending: false })
-    .limit(params.limit ?? 20);
+  if (!hasDatabaseConfig()) return [];
+  const sql = getSql();
+  const articleType = params.articleType ?? "trend_item";
+  const limit = params.limit ?? 20;
 
-  if (params.category) query = query.eq("category", params.category);
-  if (params.articleType) {
-    query = query.eq("article_type", params.articleType);
-  } else {
-    query = query.eq("article_type", "trend_item");
-  }
+  const rows = params.category
+    ? await sql.query(
+        `SELECT ${ARTICLE_LIST_COLUMNS}
+         FROM articles
+         WHERE locale = $1 AND is_published = true AND article_type = $2 AND category = $3
+         ORDER BY published_at DESC
+         LIMIT $4`,
+        [params.locale, articleType, params.category, limit],
+      )
+    : await sql.query(
+        `SELECT ${ARTICLE_LIST_COLUMNS}
+         FROM articles
+         WHERE locale = $1 AND is_published = true AND article_type = $2
+         ORDER BY published_at DESC
+         LIMIT $3`,
+        [params.locale, articleType, limit],
+      );
 
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []).map(mapArticle);
+  return (rows as Record<string, unknown>[]).map(mapArticle);
 }
 
 export async function getArticlesForFeed(params: {
   locale: string;
   limit?: number;
 }): Promise<Article[]> {
-  if (!hasSupabaseConfig()) return [];
-  const client = getSupabasePublic();
-  const { data, error } = await client
-    .from("articles")
-    .select(ARTICLE_FEED_COLUMNS)
-    .eq("locale", params.locale)
-    .eq("is_published", true)
-    .eq("article_type", "trend_item")
-    .order("published_at", { ascending: false })
-    .limit(params.limit ?? 50);
-
-  if (error) throw error;
-  return (data ?? []).map(mapFeedArticle);
+  if (!hasDatabaseConfig()) return [];
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT ${ARTICLE_FEED_COLUMNS}
+     FROM articles
+     WHERE locale = $1 AND is_published = true AND article_type = 'trend_item'
+     ORDER BY published_at DESC
+     LIMIT $2`,
+    [params.locale, params.limit ?? 50],
+  );
+  return (rows as Record<string, unknown>[]).map(mapFeedArticle);
 }
 
 export async function getDigestLinkSources(params: {
@@ -158,51 +157,26 @@ export async function getDigestLinkSources(params: {
   days: number;
   limit?: number;
 }): Promise<Array<{ headline: string; slug: string }>> {
-  if (!hasSupabaseConfig()) return [];
+  if (!hasDatabaseConfig()) return [];
 
   const since = new Date();
   since.setDate(since.getDate() - params.days);
 
-  const client = getSupabasePublic();
-  const { data, error } = await client
-    .from("articles")
-    .select("headline, slug")
-    .eq("locale", params.locale)
-    .eq("category", params.category)
-    .eq("article_type", "trend_item")
-    .eq("is_published", true)
-    .gte("published_at", since.toISOString())
-    .order("published_at", { ascending: false })
-    .limit(params.limit ?? 30);
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT headline, slug
+     FROM articles
+     WHERE locale = $1 AND category = $2 AND article_type = 'trend_item'
+       AND is_published = true AND published_at >= $3
+     ORDER BY published_at DESC
+     LIMIT $4`,
+    [params.locale, params.category, since.toISOString(), params.limit ?? 30],
+  );
 
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
-    headline: row.headline as string,
-    slug: row.slug as string,
+  return (rows as Array<{ headline: string; slug: string }>).map((row) => ({
+    headline: row.headline,
+    slug: row.slug,
   }));
-}
-
-function paginateRange(page: number, pageSize: number) {
-  const safePage = Math.max(1, page);
-  const from = (safePage - 1) * pageSize;
-  return { from, to: from + pageSize - 1, page: safePage };
-}
-
-function toPaginatedResult(
-  rows: Record<string, unknown>[] | null,
-  count: number | null,
-  page: number,
-  pageSize: number,
-): PaginatedArticles {
-  const total = count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  return {
-    articles: (rows ?? []).map(mapArticle),
-    total,
-    page,
-    pageSize,
-    totalPages,
-  };
 }
 
 export async function getArticlesPaginated(params: {
@@ -212,47 +186,71 @@ export async function getArticlesPaginated(params: {
   page?: number;
   pageSize?: number;
 }): Promise<PaginatedArticles> {
-  if (!hasSupabaseConfig()) {
+  if (!hasDatabaseConfig()) {
     return { articles: [], total: 0, page: 1, pageSize: ARTICLES_PAGE_SIZE, totalPages: 1 };
   }
 
   const pageSize = params.pageSize ?? ARTICLES_PAGE_SIZE;
-  const { from, to, page } = paginateRange(params.page ?? 1, pageSize);
-  const client = getSupabasePublic();
+  const { offset, page, limit } = paginate(params.page ?? 1, pageSize);
+  const articleType = params.articleType ?? "trend_item";
+  const sql = getSql();
 
-  let query = client
-    .from("articles")
-    .select(ARTICLE_LIST_COLUMNS, { count: "exact" })
-    .eq("locale", params.locale)
-    .eq("is_published", true)
-    .order("published_at", { ascending: false });
-
-  if (params.category) query = query.eq("category", params.category);
-  if (params.articleType) {
-    query = query.eq("article_type", params.articleType);
-  } else {
-    query = query.eq("article_type", "trend_item");
+  if (params.category) {
+    const countRows = await sql.query(
+      `SELECT count(*)::int AS count FROM articles
+       WHERE locale = $1 AND is_published = true AND article_type = $2 AND category = $3`,
+      [params.locale, articleType, params.category],
+    );
+    const rows = await sql.query(
+      `SELECT ${ARTICLE_LIST_COLUMNS}
+       FROM articles
+       WHERE locale = $1 AND is_published = true AND article_type = $2 AND category = $3
+       ORDER BY published_at DESC
+       LIMIT $4 OFFSET $5`,
+      [params.locale, articleType, params.category, limit, offset],
+    );
+    return toPaginatedResult(
+      rows as Record<string, unknown>[],
+      Number((countRows[0] as { count: number }).count),
+      page,
+      pageSize,
+    );
   }
 
-  const { data, error, count } = await query.range(from, to);
-  if (error) throw error;
-  return toPaginatedResult(data, count, page, pageSize);
+  const countRows = await sql.query(
+    `SELECT count(*)::int AS count FROM articles
+     WHERE locale = $1 AND is_published = true AND article_type = $2`,
+    [params.locale, articleType],
+  );
+  const rows = await sql.query(
+    `SELECT ${ARTICLE_LIST_COLUMNS}
+     FROM articles
+     WHERE locale = $1 AND is_published = true AND article_type = $2
+     ORDER BY published_at DESC
+     LIMIT $3 OFFSET $4`,
+    [params.locale, articleType, limit, offset],
+  );
+  return toPaginatedResult(
+    rows as Record<string, unknown>[],
+    Number((countRows[0] as { count: number }).count),
+    page,
+    pageSize,
+  );
 }
 
 export const getArticleBySlug = cache(
   async (locale: string, slug: string): Promise<Article | null> => {
-    if (!hasSupabaseConfig()) return null;
-    const client = getSupabasePublic();
-    const { data, error } = await client
-      .from("articles")
-      .select(ARTICLE_DETAIL_COLUMNS)
-      .eq("locale", locale)
-      .eq("slug", slug)
-      .eq("is_published", true)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data ? mapArticle(data) : null;
+    if (!hasDatabaseConfig()) return null;
+    const sql = getSql();
+    const rows = await sql.query(
+      `SELECT ${ARTICLE_DETAIL_COLUMNS}
+       FROM articles
+       WHERE locale = $1 AND slug = $2 AND is_published = true
+       LIMIT 1`,
+      [locale, slug],
+    );
+    const row = (rows as Record<string, unknown>[])[0];
+    return row ? mapArticle(row) : null;
   },
 );
 
@@ -260,25 +258,22 @@ export async function getRelatedArticles(
   article: Article,
   limit = 4,
 ): Promise<Article[]> {
-  if (!hasSupabaseConfig()) return [];
-  const client = getSupabasePublic();
+  if (!hasDatabaseConfig()) return [];
+  const sql = getSql();
   const tags = (article.tags ?? []).filter(Boolean);
 
   if (tags.length > 0) {
-    const { data, error } = await client
-      .from("articles")
-      .select(ARTICLE_LIST_COLUMNS)
-      .eq("locale", article.locale)
-      .eq("is_published", true)
-      .neq("id", article.id)
-      .overlaps("tags", tags)
-      .order("published_at", { ascending: false })
-      .limit(12);
-
-    if (error) throw error;
+    const rows = await sql.query(
+      `SELECT ${ARTICLE_LIST_COLUMNS}
+       FROM articles
+       WHERE locale = $1 AND is_published = true AND id <> $2 AND tags && $3::text[]
+       ORDER BY published_at DESC
+       LIMIT 12`,
+      [article.locale, article.id, tags],
+    );
 
     const tagSet = new Set(tags);
-    const ranked = (data ?? [])
+    const ranked = (rows as Record<string, unknown>[])
       .map((row) => mapArticle(row))
       .sort((a, b) => {
         const overlapDiff =
@@ -293,19 +288,16 @@ export async function getRelatedArticles(
     if (ranked.length >= limit) return ranked.slice(0, limit);
 
     const picked = new Set(ranked.map((item) => item.id));
-    const { data: fallback, error: fallbackError } = await client
-      .from("articles")
-      .select(ARTICLE_LIST_COLUMNS)
-      .eq("locale", article.locale)
-      .eq("category", article.category)
-      .eq("is_published", true)
-      .neq("id", article.id)
-      .order("published_at", { ascending: false })
-      .limit(limit);
+    const fallback = await sql.query(
+      `SELECT ${ARTICLE_LIST_COLUMNS}
+       FROM articles
+       WHERE locale = $1 AND category = $2 AND is_published = true AND id <> $3
+       ORDER BY published_at DESC
+       LIMIT $4`,
+      [article.locale, article.category, article.id, limit],
+    );
 
-    if (fallbackError) throw fallbackError;
-
-    for (const row of fallback ?? []) {
+    for (const row of fallback as Record<string, unknown>[]) {
       if (ranked.length >= limit) break;
       if (picked.has(row.id as string)) continue;
       ranked.push(mapArticle(row));
@@ -315,18 +307,15 @@ export async function getRelatedArticles(
     return ranked.slice(0, limit);
   }
 
-  const { data, error } = await client
-    .from("articles")
-    .select(ARTICLE_LIST_COLUMNS)
-    .eq("locale", article.locale)
-    .eq("category", article.category)
-    .eq("is_published", true)
-    .neq("id", article.id)
-    .order("published_at", { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return (data ?? []).map(mapArticle);
+  const rows = await sql.query(
+    `SELECT ${ARTICLE_LIST_COLUMNS}
+     FROM articles
+     WHERE locale = $1 AND category = $2 AND is_published = true AND id <> $3
+     ORDER BY published_at DESC
+     LIMIT $4`,
+    [article.locale, article.category, article.id, limit],
+  );
+  return (rows as Record<string, unknown>[]).map(mapArticle);
 }
 
 export async function getArticlesByTag(params: {
@@ -334,20 +323,18 @@ export async function getArticlesByTag(params: {
   tag: string;
   limit?: number;
 }): Promise<Article[]> {
-  if (!hasSupabaseConfig()) return [];
-  const client = getSupabasePublic();
-  const { data, error } = await client
-    .from("articles")
-    .select(ARTICLE_LIST_COLUMNS)
-    .eq("locale", params.locale)
-    .eq("is_published", true)
-    .eq("article_type", "trend_item")
-    .contains("tags", [params.tag])
-    .order("published_at", { ascending: false })
-    .limit(params.limit ?? 24);
-
-  if (error) throw error;
-  return (data ?? []).map(mapArticle);
+  if (!hasDatabaseConfig()) return [];
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT ${ARTICLE_LIST_COLUMNS}
+     FROM articles
+     WHERE locale = $1 AND is_published = true AND article_type = 'trend_item'
+       AND tags @> ARRAY[$2]::text[]
+     ORDER BY published_at DESC
+     LIMIT $3`,
+    [params.locale, params.tag, params.limit ?? 24],
+  );
+  return (rows as Record<string, unknown>[]).map(mapArticle);
 }
 
 export async function getArticlesByTagPaginated(params: {
@@ -356,56 +343,65 @@ export async function getArticlesByTagPaginated(params: {
   page?: number;
   pageSize?: number;
 }): Promise<PaginatedArticles> {
-  if (!hasSupabaseConfig()) {
+  if (!hasDatabaseConfig()) {
     return { articles: [], total: 0, page: 1, pageSize: ARTICLES_PAGE_SIZE, totalPages: 1 };
   }
 
   const pageSize = params.pageSize ?? ARTICLES_PAGE_SIZE;
-  const { from, to, page } = paginateRange(params.page ?? 1, pageSize);
-  const client = getSupabasePublic();
+  const { offset, page, limit } = paginate(params.page ?? 1, pageSize);
+  const sql = getSql();
 
-  const { data, error, count } = await client
-    .from("articles")
-    .select(ARTICLE_LIST_COLUMNS, { count: "exact" })
-    .eq("locale", params.locale)
-    .eq("is_published", true)
-    .eq("article_type", "trend_item")
-    .contains("tags", [params.tag])
-    .order("published_at", { ascending: false })
-    .range(from, to);
+  const countRows = await sql.query(
+    `SELECT count(*)::int AS count FROM articles
+     WHERE locale = $1 AND is_published = true AND article_type = 'trend_item'
+       AND tags @> ARRAY[$2]::text[]`,
+    [params.locale, params.tag],
+  );
+  const rows = await sql.query(
+    `SELECT ${ARTICLE_LIST_COLUMNS}
+     FROM articles
+     WHERE locale = $1 AND is_published = true AND article_type = 'trend_item'
+       AND tags @> ARRAY[$2]::text[]
+     ORDER BY published_at DESC
+     LIMIT $3 OFFSET $4`,
+    [params.locale, params.tag, limit, offset],
+  );
 
-  if (error) throw error;
-  return toPaginatedResult(data, count, page, pageSize);
+  return toPaginatedResult(
+    rows as Record<string, unknown>[],
+    Number((countRows[0] as { count: number }).count),
+    page,
+    pageSize,
+  );
 }
 
 export async function getDistinctTags(
   locale: string,
   options?: { minCount?: number },
 ): Promise<Array<{ name: string; slug: string; count: number }>> {
-  if (!hasSupabaseConfig()) return [];
+  if (!hasDatabaseConfig()) return [];
   const minCount = options?.minCount ?? 1;
-  const client = getSupabaseAdmin();
+  const sql = getSql();
 
-  const { data, error } = await client.rpc("get_tag_counts", {
-    p_locale: locale,
-    p_min_count: minCount,
-  });
-
-  if (error) {
-    // Fallback if RPC not deployed yet
-    const rows = await fetchAllRows<{ tags: string[] }>(async (from, to) => {
-      const { data: page, error: pageError } = await client
-        .from("articles")
-        .select("tags")
-        .eq("locale", locale)
-        .eq("is_published", true)
-        .eq("article_type", "trend_item")
-        .range(from, to);
-      return { data: page, error: pageError };
-    });
+  try {
+    const rows = await sql.query(
+      `SELECT name, cnt FROM get_tag_counts($1, $2)`,
+      [locale, minCount],
+    );
+    return (rows as Array<{ name: string; cnt: number }>).map((row) => ({
+      name: row.name,
+      slug: tagSlug(row.name),
+      count: Number(row.cnt),
+    }));
+  } catch {
+    const rows = await sql.query(
+      `SELECT tags FROM articles
+       WHERE locale = $1 AND is_published = true AND article_type = 'trend_item'`,
+      [locale],
+    );
 
     const counts = new Map<string, number>();
-    for (const row of rows) {
+    for (const row of rows as Array<{ tags: string[] }>) {
       for (const tag of row.tags ?? []) {
         counts.set(tag, (counts.get(tag) ?? 0) + 1);
       }
@@ -416,12 +412,6 @@ export async function getDistinctTags(
       .filter((item) => item.slug.length > 0 && item.count >= minCount)
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, locale));
   }
-
-  return (data ?? []).map((row: { name: string; cnt: number }) => ({
-    name: row.name,
-    slug: tagSlug(row.name),
-    count: Number(row.cnt),
-  }));
 }
 
 export async function resolveTagName(
@@ -435,26 +425,25 @@ export async function resolveTagName(
 export async function getAllArticleSlugs(): Promise<
   Array<{ locale: string; slug: string; updated_at: string }>
 > {
-  if (!hasSupabaseConfig()) return [];
-  const client = getSupabaseAdmin();
-  return fetchAllRows(async (from, to) => {
-    const { data, error } = await client
-      .from("articles")
-      .select("locale, slug, updated_at")
-      .eq("is_published", true)
-      .order("published_at", { ascending: false })
-      .range(from, to);
-    return { data, error };
-  });
+  if (!hasDatabaseConfig()) return [];
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT locale, slug, updated_at
+     FROM articles
+     WHERE is_published = true
+     ORDER BY published_at DESC`,
+  );
+  return rows as Array<{ locale: string; slug: string; updated_at: string }>;
 }
 
 export async function getLatestJobStatus() {
-  if (!hasSupabaseConfig()) return [];
-  const client = getSupabaseAdmin();
-  const { data } = await client
-    .from("generation_jobs")
-    .select("id, job_type, status, started_at, finished_at, items_processed, error")
-    .order("started_at", { ascending: false })
-    .limit(5);
-  return data ?? [];
+  if (!hasDatabaseConfig()) return [];
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT id, job_type, status, started_at, finished_at, items_processed, error
+     FROM generation_jobs
+     ORDER BY started_at DESC
+     LIMIT 5`,
+  );
+  return rows ?? [];
 }

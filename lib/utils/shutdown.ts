@@ -1,8 +1,6 @@
-/** Block ingest/generate when shutting down. Override with PROJECT_SHUTDOWN=false locally. */
+/** Opt-in kill switch for ingest/generate. Set PROJECT_SHUTDOWN=true to block jobs. */
 export function isProjectShutdown(): boolean {
-  if (process.env.PROJECT_SHUTDOWN === "false") return false;
-  if (process.env.PROJECT_SHUTDOWN === "true") return true;
-  return process.env.VERCEL_ENV === "production";
+  return process.env.PROJECT_SHUTDOWN === "true";
 }
 
 export function projectShutdownResponse() {
