@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   finishJob,
   generatePendingArticles,
+  getGenerationBudgetStatus,
   startJob,
 } from "@/lib/ai/generate";
 import { verifyCronSecret } from "@/lib/utils/cron-auth";
@@ -18,6 +19,17 @@ export async function POST(request: NextRequest) {
 
   if (!isCronAiEnabled()) {
     return cronAiDisabledResponse();
+  }
+
+  const budget = await getGenerationBudgetStatus();
+  if (budget.exceeded) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "daily_token_budget",
+      tokensUsedToday: budget.tokensUsedToday,
+      tokenBudget: budget.tokenBudget,
+    });
   }
 
   const job = await startJob("generate");

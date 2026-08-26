@@ -59,6 +59,7 @@ import {
 import { contentHash, slugify } from "@/lib/utils/hash";
 
 const BATCH_SIZE = 4;
+const DEFAULT_DAILY_TOKEN_BUDGET = 750_000;
 const PENDING_POOL_SIZE = 250;
 const PENDING_FETCH_SIZE = 150;
 const AI_POOL_MIN = 50;
@@ -1082,6 +1083,35 @@ async function fetchPendingForSources(
   );
 
   return (rows as Record<string, unknown>[]).map(toLeanPendingItem);
+}
+
+export function getGenerationDailyTokenBudget(): number {
+  const raw = process.env.GENERATION_DAILY_TOKEN_BUDGET;
+  if (!raw) return DEFAULT_DAILY_TOKEN_BUDGET;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_DAILY_TOKEN_BUDGET;
+}
+
+export async function getGenerationBudgetStatus(): Promise<{
+  exceeded: boolean;
+  tokensUsedToday: number;
+  tokenBudget: number;
+}> {
+  const sql = getSql();
+  const tokenBudget = getGenerationDailyTokenBudget();
+  const rows = await sql.query(
+    `SELECT COALESCE(SUM(tokens_used), 0)::int AS total
+     FROM generation_jobs
+     WHERE job_type = 'generate'
+       AND status IN ('completed', 'running')
+       AND started_at >= date_trunc('day', now())`,
+  );
+  const tokensUsedToday = (rows[0] as { total: number }).total ?? 0;
+  return {
+    exceeded: tokensUsedToday >= tokenBudget,
+    tokensUsedToday,
+    tokenBudget,
+  };
 }
 
 export async function generatePendingArticles(options?: {
