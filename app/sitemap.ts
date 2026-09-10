@@ -19,25 +19,25 @@ const LOCALES = activeLocales;
 /** Tags need several articles before they earn a sitemap slot. */
 const TAG_SITEMAP_MIN_COUNT = 5;
 
-/** Regenerate sitemap from DB hourly (keeps Neon egress lower). */
-export const revalidate = 3600;
+/** Regenerate sitemap from DB every 4h (cuts Neon wake-ups). */
+export const revalidate = 14400;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();
   const staticRoutes: MetadataRoute.Sitemap = [
-    { url: base, changeFrequency: "hourly", priority: 1 },
+    { url: base, changeFrequency: "daily", priority: 1 },
     { url: `${base}${dailyDigestPath("pl")}`, changeFrequency: "daily", priority: 0.8 },
     { url: `${base}${weeklyDigestPath("pl")}`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${base}${aboutPath("pl")}`, changeFrequency: "monthly", priority: 0.3 },
     { url: `${base}${privacyPath("pl")}`, changeFrequency: "monthly", priority: 0.3 },
-    { url: `${base}${RSS_FEED_PATH}`, changeFrequency: "hourly", priority: 0.5 },
+    { url: `${base}${RSS_FEED_PATH}`, changeFrequency: "daily", priority: 0.5 },
   ];
 
   for (const locale of LOCALES) {
     for (const category of CATEGORIES) {
       staticRoutes.push({
         url: `${base}${categoryPath(locale, categorySlug(locale, category))}`,
-        changeFrequency: "hourly",
+        changeFrequency: "daily",
         priority: 0.9,
       });
     }

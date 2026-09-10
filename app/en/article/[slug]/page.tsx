@@ -10,7 +10,7 @@ import { getSourceItemsForArticle } from "@/lib/sources/ingest";
 import { articlePath } from "@/lib/i18n/config";
 import { siteUrl } from "@/lib/site";
 
-export const revalidate = 3600;
+export const revalidate = 86400;
 
 type Props = { params: Promise<{ slug: string }> };
 

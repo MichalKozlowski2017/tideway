@@ -7,7 +7,7 @@ import { articlePath, tagPath, ui } from "@/lib/i18n/config";
 import { itemListJsonLd } from "@/lib/seo/json-ld";
 import { SITE_NAME, siteUrl } from "@/lib/site";
 
-export const revalidate = 600;
+export const revalidate = 14400;
 
 type Props = { params: Promise<{ tag: string }> };
 

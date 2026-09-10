@@ -18,7 +18,7 @@ Required:
 DATABASE_URL=postgresql://...@...neon.tech/neondb?sslmode=require
 ```
 
-Use the **pooled** connection string from the Neon console for the Next.js app and scripts.
+Use the **pooled** connection string from the Neon console (`…-pooler.…neon.tech`) for the Next.js app and scripts.
 
 ## Schema
 

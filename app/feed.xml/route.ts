@@ -1,7 +1,7 @@
 import { getArticlesForFeed } from "@/lib/db/queries";
 import { buildRssFeed } from "@/lib/seo/rss";
 
-export const revalidate = 3600;
+export const revalidate = 14400;
 
 export async function GET() {
   const articles = await getArticlesForFeed({ locale: "pl", limit: 50 });
