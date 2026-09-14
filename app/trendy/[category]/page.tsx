@@ -7,7 +7,7 @@ import { categoryLabels, categoryPath } from "@/lib/i18n/config";
 import { SITE_NAME, siteUrl } from "@/lib/site";
 import { categoryFromSlug, categorySlug } from "@/lib/types";
 
-export const revalidate = 14400;
+export const revalidate = 86400;
 
 type Props = { params: Promise<{ category: string }> };
 

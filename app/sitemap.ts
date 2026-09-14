@@ -19,8 +19,8 @@ const LOCALES = activeLocales;
 /** Tags need several articles before they earn a sitemap slot. */
 const TAG_SITEMAP_MIN_COUNT = 5;
 
-/** Regenerate sitemap from DB every 4h (cuts Neon wake-ups). */
-export const revalidate = 14400;
+/** Regenerate sitemap from DB daily (cuts Neon wake-ups). */
+export const revalidate = 86400;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();

@@ -5,7 +5,7 @@ import { getArticles } from "@/lib/db/queries";
 import { ui, categoryLabels } from "@/lib/i18n/config";
 import { categorySlug, MAIN_CATEGORIES } from "@/lib/types";
 
-export const revalidate = 14400;
+export const revalidate = 86400;
 
 export const metadata: Metadata = {
   title: "Tideway — today's trends",

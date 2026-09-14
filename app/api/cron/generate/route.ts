@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import {
   finishJob,
   generatePendingArticles,
@@ -10,6 +11,17 @@ import { cronAiDisabledResponse, isCronAiEnabled } from "@/lib/utils/cron-ai";
 import { isProjectShutdown, projectShutdownResponse } from "@/lib/utils/shutdown";
 
 export const maxDuration = 300;
+
+function refreshPublicCaches() {
+  revalidatePath("/");
+  revalidatePath("/trendy", "layout");
+  revalidatePath("/artykul", "layout");
+  revalidatePath("/dzienny-przeglad");
+  revalidatePath("/tygodniowy-przeglad");
+  revalidatePath("/tagi", "layout");
+  revalidatePath("/sitemap.xml");
+  revalidatePath("/feed.xml");
+}
 
 export async function POST(request: NextRequest) {
   if (isProjectShutdown()) return projectShutdownResponse();
@@ -41,6 +53,7 @@ export async function POST(request: NextRequest) {
     const result = await generatePendingArticles();
     const { generated, tokensUsed, aiProvider, aiModel } = result;
     await finishJob(job.id, "completed", generated, tokensUsed);
+    if (generated > 0) refreshPublicCaches();
     return NextResponse.json({ ok: true, generated, tokensUsed, aiProvider, aiModel });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

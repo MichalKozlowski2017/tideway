@@ -436,6 +436,21 @@ export async function getAllArticleSlugs(): Promise<
   return rows as Array<{ locale: string; slug: string; updated_at: string }>;
 }
 
+export async function getArticleSlugsForLocale(
+  locale: string,
+): Promise<Array<{ slug: string }>> {
+  if (!hasDatabaseConfig()) return [];
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT slug
+     FROM articles
+     WHERE locale = $1 AND is_published = true
+     ORDER BY published_at DESC`,
+    [locale],
+  );
+  return rows as Array<{ slug: string }>;
+}
+
 export async function getLatestJobStatus() {
   if (!hasDatabaseConfig()) return [];
   const sql = getSql();

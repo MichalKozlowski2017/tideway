@@ -5,14 +5,20 @@ import { SiteHeader } from "@/components/site-header";
 import { buildArticleMetadata } from "@/lib/seo/article-metadata";
 import { articlePageJsonLd } from "@/lib/seo/json-ld";
 import { resolveDigestItems } from "@/lib/digest/resolve";
-import { getArticleBySlug, getRelatedArticles } from "@/lib/db/queries";
+import { getArticleBySlug, getRelatedArticles, getArticleSlugsForLocale } from "@/lib/db/queries";
 import { getSourceItemsForArticle } from "@/lib/sources/ingest";
 import { articlePath } from "@/lib/i18n/config";
 import { siteUrl } from "@/lib/site";
 
-export const revalidate = 86400;
+/** Prefer CDN static pages — cuts Neon wake-ups from crawlers. */
+export const revalidate = 604800;
 
 type Props = { params: Promise<{ slug: string }> };
+
+export async function generateStaticParams() {
+  const rows = await getArticleSlugsForLocale("en");
+  return rows.map((row) => ({ slug: row.slug }));
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
