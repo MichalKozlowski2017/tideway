@@ -9,7 +9,7 @@ import { normalizeListSummary } from "@/lib/ai/article-body";
 import { tagSlug } from "@/lib/tags";
 import type { Article } from "@/lib/types";
 
-export const ARTICLES_PAGE_SIZE = 24;
+export const ARTICLES_PAGE_SIZE = 48;
 
 export type PaginatedArticles = {
   articles: Article[];

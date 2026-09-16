@@ -5,6 +5,9 @@ import {
   getArticlesPaginated,
 } from "@/lib/db/queries";
 
+/** CDN-cache list pages so infinite scroll does not wake Neon on every request. */
+export const revalidate = 86400;
+
 function parsePositiveInt(value: string | null, fallback: number): number {
   const n = Number.parseInt(value ?? "", 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -33,7 +36,12 @@ export async function GET(request: NextRequest) {
           pageSize,
         });
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control":
+          "public, s-maxage=86400, stale-while-revalidate=86400",
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

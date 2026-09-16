@@ -13,9 +13,10 @@ import { isProjectShutdown, projectShutdownResponse } from "@/lib/utils/shutdown
 export const maxDuration = 300;
 
 function refreshPublicCaches() {
+  // Only invalidate listing surfaces — never wipe /artykul layout
+  // (that forced crawlers to rebuild 700+ pages via Neon).
   revalidatePath("/");
   revalidatePath("/trendy", "layout");
-  revalidatePath("/artykul", "layout");
   revalidatePath("/dzienny-przeglad");
   revalidatePath("/tygodniowy-przeglad");
   revalidatePath("/tagi", "layout");

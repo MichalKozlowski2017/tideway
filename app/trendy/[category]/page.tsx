@@ -5,11 +5,17 @@ import { SiteHeader } from "@/components/site-header";
 import { getArticlesPaginated } from "@/lib/db/queries";
 import { categoryLabels, categoryPath } from "@/lib/i18n/config";
 import { SITE_NAME, siteUrl } from "@/lib/site";
-import { categoryFromSlug, categorySlug } from "@/lib/types";
+import { categoryFromSlug, categorySlug, MAIN_CATEGORIES } from "@/lib/types";
 
 export const revalidate = 86400;
 
 type Props = { params: Promise<{ category: string }> };
+
+export function generateStaticParams() {
+  return MAIN_CATEGORIES.map((category) => ({
+    category: categorySlug("pl", category),
+  }));
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { category: slug } = await params;
