@@ -6,7 +6,12 @@ const INDEXNOW_ENDPOINT = "https://api.indexnow.org/indexnow";
 const MAX_URLS_PER_REQUEST = 10_000;
 
 function isIndexNowEnabled(): boolean {
-  return Boolean(INDEXNOW_KEY) && process.env.VERCEL_ENV === "production";
+  // Opt-in: IndexNow triggers immediate crawler waves that keep Neon awake for hours.
+  return (
+    process.env.INDEXNOW_ENABLED === "true" &&
+    Boolean(INDEXNOW_KEY) &&
+    process.env.VERCEL_ENV === "production"
+  );
 }
 
 export function articlePublicUrl(locale: Locale, slug: string): string {

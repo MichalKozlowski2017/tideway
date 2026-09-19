@@ -1,12 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import {
   ARTICLES_PAGE_SIZE,
   getArticlesByTagPaginated,
   getArticlesPaginated,
 } from "@/lib/db/queries";
 
-/** CDN-cache list pages so infinite scroll does not wake Neon on every request. */
-export const revalidate = 86400;
+const getCachedArticlesPage = unstable_cache(
+  async (
+    locale: string,
+    category: string | undefined,
+    tag: string | undefined,
+    articleType: string | undefined,
+    page: number,
+    pageSize: number,
+  ) => {
+    if (tag) {
+      return getArticlesByTagPaginated({ locale, tag, page, pageSize });
+    }
+    return getArticlesPaginated({
+      locale,
+      category,
+      articleType,
+      page,
+      pageSize,
+    });
+  },
+  ["api-articles"],
+  { revalidate: 86400 },
+);
 
 function parsePositiveInt(value: string | null, fallback: number): number {
   const n = Number.parseInt(value ?? "", 10);
@@ -26,15 +48,14 @@ export async function GET(request: NextRequest) {
   );
 
   try {
-    const result = tag
-      ? await getArticlesByTagPaginated({ locale, tag, page, pageSize })
-      : await getArticlesPaginated({
-          locale,
-          category,
-          articleType,
-          page,
-          pageSize,
-        });
+    const result = await getCachedArticlesPage(
+      locale,
+      category,
+      tag,
+      articleType,
+      page,
+      pageSize,
+    );
 
     return NextResponse.json(result, {
       headers: {
